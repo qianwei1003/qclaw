@@ -1,0 +1,11 @@
+{
+  "servers": [
+    {
+      "name": "example-mcp-server",
+      "command": "node",
+      "args": ["path/to/server.js"],
+      "env": {},
+      "disabled": false
+    }
+  ]
+}
