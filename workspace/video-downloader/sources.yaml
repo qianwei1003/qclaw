@@ -1,0 +1,48 @@
+# 视频订阅源配置
+output_dir: "D:/Videos/Downloaded"
+
+subscriptions:
+  youtube:
+    - name: "3Blue1Brown 数学"
+      url: "https://www.youtube.com/@3blue1brown"
+      quality: "ultra"          # 覆盖全局设置: 4K 原画
+      enabled: true
+    - name: "Veritasium 科普"
+      url: "https://www.youtube.com/@veritasium"
+      quality: "high"            # 覆盖: 1080P
+      enabled: true
+    - name: "Kurzgesagt 动画科普"
+      url: "https://www.youtube.com/@kurzgesagt"
+      quality: "high"
+      enabled: true
+    - name: "MKBHD 科技"
+      url: "https://www.youtube.com/@mkbhd"
+      quality: "ultra"
+      enabled: true
+    - name: "SmarterEveryDay"
+      url: "https://www.youtube.com/@smartereveryday"
+      quality: "high"
+      enabled: true
+
+  bilibili:
+    - name: "老高与小茉"
+      url: "https://space.bilibili.com/7981959"
+      quality: "high"            # 覆盖: 1080P (B站用超清)
+      enabled: true
+    - name: "MKBHD中文"
+      url: "https://space.bilibili.com/57698330"
+      quality: "medium"          # 覆盖: 720P
+      enabled: true
+
+  tiktok:
+    - name: "抖音测试"
+      url: "https://www.tiktok.com/@user"
+      quality: "medium"          # 覆盖: 720P
+      enabled: false
+
+settings:
+  proxy: "http://127.0.0.1:7897"
+  retry_times: 3
+  check_interval_hours: 6
+  filename_template: "[{platform}] {title} [{year}{month}{day}].{ext}"
+  log_level: "INFO"
