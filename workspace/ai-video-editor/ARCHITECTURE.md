@@ -1,6 +1,6 @@
 # AI 视频剪辑工具 - 架构规划
 
-**文档版本：** 1.0  
+**文档版本：** 1.2
 **更新日期：** 2026-03-24
 
 ---
@@ -45,12 +45,78 @@
 
 **所有阶段都会用到的功能，优先开发并复用。**
 
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| Parser（需求解析） | ✅ 已完成 | 自然语言 → 结构化指令 |
-| Executor（执行器） | ✅ 已完成 | FFmpeg 封装 |
-| Validator（验证器） | ✅ 已完成 | 输出验证 |
-| 视频下载 | ✅ 已完成 | yt-dlp |
+| 功能 | 状态 | 模块文件 |
+|------|------|---------|
+| Parser（需求解析） | ✅ 已完成 | `modules/parser.py` |
+| Executor（执行器） | ✅ 已完成 | `modules/executor.py` |
+| Validator（验证器） | ✅ 已完成 | `modules/validator.py` |
+| 视频下载 | ✅ 已完成 | yt-dlp 集成 |
+
+---
+
+## 📋 Parser 模块详解
+
+**`modules/parser.py`** — 自然语言 → 结构化指令
+
+### 支持的操作
+
+| operation | 指令示例 | params |
+|-----------|---------|--------|
+| `trim_start` | "删除前 10 秒" | `start_time` |
+| `trim_end` | "删除最后 5 秒" | `end_time` |
+| `trim_range` | "只保留 1:00 到 3:00" | `start_time`, `end_time` |
+| `trim_range`（多段） | "只保留 0到10和30到50" | `segments: [(s,e), ...]` |
+| `concat` | "合并 video1 和 video2" | `files: [...]` |
+| `convert` | "转换为 1080p" | `width`, `height` |
+| `remove_silence` | "删除静音段" | `threshold` |
+| `remove_static` | "删除静止段" | `threshold` |
+
+### 时间格式支持
+- `"10 秒"` → 10
+- `"1分30秒"` → 90
+- `"1:30"` → 90
+- `"1:00:00"` → 3600
+- `"0到10和30到50"` → 多段截取
+
+---
+
+## 📋 Executor 模块详解
+
+**`modules/executor.py`** — 调用 FFmpeg 执行视频处理
+
+### 核心方法
+
+| 方法 | 功能 |
+|------|------|
+| `_trim_start` | 删除视频开头 |
+| `_trim_end` | 删除视频结尾 |
+| `_trim_range` | 截取单段 |
+| `_trim_segments` | 多段截取并合并（自动分段→FFmpeg concat→合并） |
+| `_concat` | 合并多个视频文件 |
+| `_convert` | 改变分辨率 |
+| `_remove_silence` | FFmpeg silenceremove 滤镜删除静音 |
+| `_remove_static` | ⚠️ 待实现（需 Python 帧分析） |
+
+### 关键能力
+- **FFmpeg 路径检测**：自动寻找系统 ffmpeg
+- **自动回退**：`-c copy` 失败时自动尝试重新编码
+- **临时文件清理**：自动删除中间片段
+- **Windows 路径兼容**：自动标准化路径分隔符
+
+---
+
+## 📋 Validator 模块详解
+
+**`modules/validator.py`** — 输出验证
+
+| 检查项 | 说明 |
+|--------|------|
+| 文件存在性 | 输出文件是否存在 |
+| 文件大小 | 是否大于 1KB |
+| 元数据提取 | 时长、分辨率、帧率、编码 |
+| 时长验证 | 与预期时长对比（±5% 容差） |
+| 分辨率验证 | 与预期分辨率对比 |
+| 视频损坏检测 | 时长过短（<0.1s）标记为无效 |
 
 ---
 
@@ -61,30 +127,19 @@
 ### 核心功能
 | 小功能 | 工具 | 状态 |
 |--------|------|------|
-| 静音检测 | auto-editor | ⏳ |
-| 静止检测 | auto-editor | ⏳ |
-| 删除静音段 | FFmpeg | ⏳ |
-| 删除静止段 | FFmpeg | ⏳ |
-| **多片段截取合并** | FFmpeg | ⏳ **新增** |
+| 单段截取 | FFmpeg | ✅ 已完成 |
+| 多段截取合并 | FFmpeg | ✅ 已完成 |
+| 视频合并 | FFmpeg | ✅ 已完成 |
+| 格式转换 | FFmpeg | ✅ 已完成 |
+| 删除静音段 | FFmpeg silenceremove | ✅ 已完成 |
+| 删除静止段 | - | ⏳ Parser 完成，Executor 待实现 |
 
-### 验收标准
-- [ ] 能够处理一个测试视频
-- [ ] 输出删除静音后的视频
-- [ ] 处理时间在可接受范围内
+### 主入口：VideoEditor 类
 
-### 技术方案
-```
-用户: "删除静音段"
-   ↓
-Parser → {"operation": "remove_silence", "params": {...}}
-   ↓
-Executor + auto-editor → 找出静音段
-   ↓
-Executor + FFmpeg → 删除静音段
-   ↓
-Validator → 验证输出
-   ↓
-完成
+```python
+class VideoEditor:
+    def edit(self, instruction, input_video, output_video, validate=True) -> dict
+    def batch_edit(self, tasks) -> list
 ```
 
 ---
@@ -96,15 +151,10 @@ Validator → 验证输出
 ### 核心功能
 | 小功能 | 工具 | 状态 |
 |--------|------|------|
-| 场景检测 | PySceneDetect | ⏳ |
-| 场景分割 | FFmpeg | ⏳ |
-| 生成缩略图 | FFmpeg | ⏳ |
-| 场景列表输出 | - | ⏳ |
-
-### 验收标准
-- [ ] 能够检测场景变化
-- [ ] 自动分割成多个片段
-- [ ] 生成场景列表和时间码
+| 场景检测 | PySceneDetect | ⏳ 待实现 |
+| 场景分割 | FFmpeg | ⏳ 待实现 |
+| 生成缩略图 | FFmpeg | ⏳ 待实现 |
+| 场景列表输出 | - | ⏳ 待实现 |
 
 ---
 
@@ -115,14 +165,9 @@ Validator → 验证输出
 ### 核心功能
 | 小功能 | 工具 | 状态 |
 |--------|------|------|
-| 语音识别 | Whisper | ⏳ |
-| 生成 SRT 字幕 | - | ⏳ |
-| 字幕嵌入视频 | FFmpeg | ⏳ |
-
-### 验收标准
-- [ ] 能够识别中文语音
-- [ ] 生成正确的字幕时间轴
-- [ ] 字幕可导出或嵌入视频
+| 语音识别 | Whisper | ⏳ 待实现 |
+| 生成 SRT 字幕 | - | ⏳ 待实现 |
+| 字幕嵌入视频 | FFmpeg | ⏳ 待实现 |
 
 ---
 
@@ -133,81 +178,44 @@ Validator → 验证输出
 ### 核心功能
 | 小功能 | 工具/算法 | 状态 |
 |--------|----------|------|
-| 内容识别 | OpenCV | ⏳ |
-| 精彩片段检测 | 自定义算法 | ⏳ |
-| 自动选段 | 自定义算法 | ⏳ |
-| 生成短视频 | FFmpeg | ⏳ |
-| 添加背景音乐 | FFmpeg | ⏳ |
-| 添加转场 | FFmpeg | ⏳ |
-
-### 验收标准
-- [ ] 能够识别精彩片段
-- [ ] 自动生成 60 秒短视频
-- [ ] 视频节奏合理
+| 内容识别 | OpenCV | ⏳ 待实现 |
+| 精彩片段检测 | 自定义算法 | ⏳ 待实现 |
+| 自动选段 | 自定义算法 | ⏳ 待实现 |
+| 生成短视频 | FFmpeg | ⏳ 待实现 |
+| 添加背景音乐 | FFmpeg | ⏳ 待实现 |
+| 添加转场 | FFmpeg | ⏳ 待实现 |
 
 ---
 
-## 📊 依赖关系图
-
-```
-通用基础设施 ← 所有阶段依赖
-    ↓
-V1 (基础剪辑) ← 依赖通用基础设施
-    ↓
-V2 (场景分割) ← 依赖通用基础设施 + V1的片段处理能力
-    ↓
-V3 (自动字幕) ← 依赖通用基础设施 + V1的片段处理能力
-    ↓
-V4 (智能剪辑) ← 依赖通用基础设施 + V1/V2/V3 的能力
-```
-
----
-
-## 📁 文件结构规划
+## 📁 文件结构
 
 ```
 ai-video-editor/
-├── main.py                    # 主入口
+├── main.py                    # 主入口（VideoEditor 类 + CLI）
 │
 ├── modules/                   # 通用基础设施
+│   ├── __init__.py
 │   ├── parser.py             # 需求解析
-│   ├── executor.py           # 执行器
-│   ├── validator.py          # 验证器
-│   └── __init__.py
+│   ├── executor.py            # 执行器
+│   └── validator.py          # 验证器
 │
-├── tools/                     # 工具封装
-│   ├── ffmpeg.py             # FFmpeg 封装
-│   ├── auto_editor.py        # auto-editor 封装
-│   ├── scene_detect.py        # PySceneDetect 封装
-│   ├── whisper.py             # Whisper 封装
-│   └── __init__.py
-│
-├── stages/                    # 业务阶段
-│   ├── v1_basic_edit/        # V1: 基础自动剪辑
-│   │   ├── remove_silence.py # 删除静音段
-│   │   ├── remove_static.py  # 删除静止段
-│   │   └── clip_segments.py  # 多片段截取合并
-│   │
-│   ├── v2_scene_split/        # V2: 场景分割
-│   │   ├── detect_scenes.py  # 场景检测
-│   │   └── split_scenes.py  # 场景分割
-│   │
-│   ├── v3_subtitle/          # V3: 自动字幕
-│   │   ├── recognize.py      # 语音识别
-│   │   └── embed_subtitle.py # 字幕嵌入
-│   │
-│   └── v4_smart_edit/        # V4: 智能剪辑
-│       ├── detect_highlights.py # 精彩片段检测
-│       └── generate_short.py   # 生成短视频
+├── docs/                      # 详细文档
+│   ├── ARCHITECTURE.md       # 技术架构
+│   ├── API_DESIGN.md         # API 设计
+│   ├── WORKFLOW.md           # 处理流程
+│   ├── TEST_PLAN.md          # 测试方案
+│   └── ERROR_HANDLING.md     # 错误处理
 │
 ├── tests/                     # 测试
-│   └── test_video.mp4
+│   ├── test_video.mp4
+│   ├── generate_test_video.py
+│   └── generate_test_video2.py
 │
-├── docs/                      # 文档
-│   ├── ARCHITECTURE.md
-│   └── ...
+├── PROJECT_PLAN.md            # 开发计划
+├── ARCHITECTURE.md            # 架构概览（本文档）
+├── README.md                  # 项目说明
 │
-└── PROJECT_PLAN.md           # 项目计划
+└── output/                    # 输出目录
 ```
 
 ---
@@ -216,7 +224,9 @@ ai-video-editor/
 
 | 日期 | 版本 | 更新内容 |
 |------|------|---------|
-| 2026-03-24 | 1.0 | 初始架构规划 |
+| 2026-03-23 | 1.0 | 初始架构规划 |
+| 2026-03-24 | 1.1 | 完成通用基础设施模块 |
+| 2026-03-24 | 1.2 | 完成多段截取、主类架构、全面文档 |
 
 ---
 
@@ -226,3 +236,4 @@ ai-video-editor/
 2. **工具封装独立** - 每个外部工具单独封装，不耦合业务逻辑
 3. **阶段解耦** - 每个阶段独立开发，可单独测试
 4. **增量开发** - 每个阶段的小功能可独立完成和测试
+5. **自然语言优先** - 用户通过说话控制，不需要记命令参数
