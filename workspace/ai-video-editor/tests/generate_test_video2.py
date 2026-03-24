@@ -4,7 +4,7 @@
 import subprocess
 import os
 
-output = r"C:\Users\admin\.qclaw\workspace\ai-video-editor\tests\test_silence_video2.mp4"
+output = __import__('os').path.join(os.path.dirname(os.path.abspath(__file__)), "test_silence_video2.mp4")
 
 # 生成方案：5秒有声音 + 3秒静音 + 5秒有声音 + 3秒静音 + 5秒有声音
 # 使用 anullsrc 生成真正的静音

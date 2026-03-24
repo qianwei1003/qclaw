@@ -537,24 +537,87 @@ class Executor:
         """
         删除静音段
         
+        使用 FFmpeg silencedetect 检测静音段时间，
+        再用 trim 截取非静音段，最后合并。
+        
         Args:
-            params: 参数 (threshold)
+            params: 参数 (threshold，单位 dB)
             input_video: 输入视频
             output_video: 输出视频
         """
-        threshold = params.get("threshold", -40)
+        import tempfile
         
-        # 构建命令：删除静音段
-        cmd = self._build_command(
-            input_video,
-            output_video,
-            [
-                "-af", f"silenceremove=1:0:{threshold}",  # 删除静音
-            ]
+        threshold = params.get("threshold", -40)  # dB 值，如 -40
+        
+        # Step 1: 用 silencedetect 检测静音段时间
+        cmd_detect = [
+            self.ffmpeg_path,
+            "-i", input_video,
+            "-af", f"silencedetect=noise={threshold}dB:d=0.05",
+            "-f", "null", "-"
+        ]
+        
+        result = subprocess.run(
+            cmd_detect,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=120
         )
         
-        success, message = self._run_ffmpeg(cmd)
-        return success
+        # 解析 silencedetect 输出，找出静音段时间
+        silent_ranges = []  # [(start, end), ...]
+        for line in result.stderr.split("\n"):
+            if "silence_start:" in line:
+                start = float(line.split("silence_start:")[1].strip())
+                silent_ranges.append({"start": start, "end": None})
+            elif "silence_end:" in line and silent_ranges:
+                parts = line.split("silence_end:")[1].strip().split("|")[0].strip()
+                end = float(parts)
+                silent_ranges[-1]["end"] = end
+        
+        # 没有检测到静音，直接复制
+        if not silent_ranges:
+            cmd = self._build_command(
+                input_video,
+                output_video,
+                ["-c", "copy"]
+            )
+            return self._run_ffmpeg(cmd)[0]
+        
+        # Step 2: 获取视频总时长
+        duration = self.get_video_duration(input_video)
+        
+        # Step 3: 计算保留的非静音段
+        keep_segments = []
+        prev_end = 0.0
+        for sr in silent_ranges:
+            if sr["end"] is not None:
+                if prev_end < sr["start"]:
+                    keep_segments.append((prev_end, sr["start"]))
+                prev_end = sr["end"]
+        
+        # 末尾的非静音段
+        if prev_end < duration:
+            keep_segments.append((prev_end, duration))
+        
+        # 没有可保留的段
+        if not keep_segments:
+            raise ExecutionError("整个视频都是静音，无法处理")
+        
+        # Step 4: 单段直接截取
+        if len(keep_segments) == 1:
+            start, end = keep_segments[0]
+            cmd = self._build_command(
+                input_video,
+                output_video,
+                ["-ss", str(start), "-to", str(end)]
+            )
+            return self._run_ffmpeg(cmd)[0]
+        
+        # Step 5: 多段截取并合并
+        return self._trim_segments(keep_segments, input_video, output_video)
     
     def _remove_static(
         self, 

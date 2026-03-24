@@ -7,7 +7,7 @@ import os
 # 方案：用 ffmpeg 生成一个测试视频
 # 结构：5秒有声音 + 3秒静音 + 5秒有声音 + 3秒静音 + 5秒有声音 = 21秒
 
-output = r"C:\Users\admin\.qclaw\workspace\ai-video-editor\tests\test_silence_video.mp4"
+output = __import__('os').path.join(os.path.dirname(os.path.abspath(__file__)), "test_silence_video.mp4")
 
 # 使用 amovie 和 aconcatenate 来创建静音段
 # 更简单的方法：先生成有声音的，再合成
