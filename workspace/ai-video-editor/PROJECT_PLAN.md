@@ -185,13 +185,15 @@ ai-video-editor/
 - [x] 处理流程文档
 - [x] 测试方案文档
 - [x] 错误处理规范
-- [x] **第三阶段：原型实现（逐步执行中）**
+- [x] **第三阶段：原型实现（已完成）**
   - [x] Step 1: 实现 Parser 模块（需求解析）
   - [x] Step 2: 实现 Executor 模块（执行）
   - [x] Step 3: 实现 Validator 模块（验证）
   - [x] Step 4: 实现主接口（VideoEditor 类 + CLI）
   - [x] Step 5: 测试视频生成脚本
-  - [ ] Step 6: 准备测试环境 + 演示完整工作流
+  - [x] Step 6: 准备测试环境 + 演示完整工作流
+  - [x] Step 7: 修复 remove_silence（FFmpeg 7.x 兼容）
+  - [x] Step 8: 实现 remove_static（OpenCV 帧分析）
 
 ---
 
@@ -245,8 +247,8 @@ python main.py "删除静音段" input.mp4 output.mp4 --detect-scenes --generate
 | 多段截取合并 | FFmpeg | ✅ 已完成 |
 | 视频合并 | FFmpeg | ✅ 已完成 |
 | 格式转换/分辨率改变 | FFmpeg | ✅ 已完成 |
-| 删除静音段（基础版） | FFmpeg | ✅ 已完成（silenceremove 滤镜） |
-| 删除静止段 | - | ⏳ 待实现（需配合 Python 帧分析） |
+| 删除静音段 | FFmpeg silenceremove | ✅ 已完成（FFmpeg 7.x 兼容版） |
+| 删除静止段 | OpenCV 帧分析 | ✅ 已完成（2026-03-24） |
 
 ### Parser 支持的操作类型
 
