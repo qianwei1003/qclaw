@@ -6,7 +6,7 @@ Executor 模块 - 视频处理执行器
 import subprocess
 import os
 import re
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List
 
 
 class ExecutionError(Exception):
@@ -75,6 +75,9 @@ class Executor:
             return self._trim_end(params, input_video, output_video, duration)
         
         elif operation == "trim_range":
+            # 检查是否是多段截取
+            if "segments" in params:
+                return self._trim_segments(params["segments"], input_video, output_video)
             return self._trim_range(params, input_video, output_video)
         
         elif operation == "concat":
@@ -85,6 +88,9 @@ class Executor:
         
         elif operation == "remove_silence":
             return self._remove_silence(params, input_video, output_video)
+        
+        elif operation == "remove_static":
+            return self._remove_static(params, input_video, output_video)
         
         else:
             raise ExecutionError(f"不支持的操作类型: {operation}")
@@ -318,6 +324,110 @@ class Executor:
         
         return success
     
+    def _trim_segments(
+        self, 
+        segments: List[Tuple[float, float]], 
+        input_video: str, 
+        output_video: str
+    ) -> bool:
+        """
+        多段截取并合并
+        
+        Args:
+            segments: 时间段列表 [(start1, end1), (start2, end2), ...]
+            input_video: 输入视频
+            output_video: 输出视频
+        """
+        import os
+        import tempfile
+        
+        if not segments:
+            raise ExecutionError("没有指定要截取的时间段")
+        
+        # 验证时间段
+        for i, (start, end) in enumerate(segments):
+            if start >= end:
+                raise ExecutionError(f"时间段 {i+1}: 开始时间必须小于结束时间")
+        
+        # 如果只有一段，直接截取
+        if len(segments) == 1:
+            start, end = segments[0]
+            return self._trim_range(
+                {"start_time": start, "end_time": end},
+                input_video,
+                output_video
+            )
+        
+        # 多段：先截取各片段，再合并
+        temp_dir = tempfile.mkdtemp(prefix="video_edit_")
+        temp_files = []
+        
+        try:
+            # 1. 截取各片段
+            for i, (start, end) in enumerate(segments):
+                temp_file = os.path.join(temp_dir, f"segment_{i}.mp4")
+                temp_files.append(temp_file)
+                
+                # 截取片段
+                cmd = self._build_command(
+                    input_video,
+                    temp_file,
+                    ["-ss", str(start), "-to", str(end)]
+                )
+                success, msg = self._run_ffmpeg(cmd)
+                if not success:
+                    raise ExecutionError(f"截取片段 {i+1} 失败: {msg}")
+            
+            # 2. 创建合并文件列表
+            concat_list_file = os.path.join(temp_dir, "concat_list.txt")
+            with open(concat_list_file, 'w', encoding='utf-8') as f:
+                for temp_file in temp_files:
+                    f.write(f"file '{self._normalize_path(temp_file)}'\n")
+            
+            # 3. 合并片段
+            cmd = [
+                self.ffmpeg_path,
+                "-f", "concat",
+                "-safe", "0",
+                "-i", concat_list_file,
+                "-c", "copy",  # 直接复制，不重新编码
+                "-y",
+                output_video
+            ]
+            
+            success, msg = self._run_ffmpeg(cmd)
+            
+            if not success:
+                # 尝试重新编码合并
+                cmd = [
+                    self.ffmpeg_path,
+                    "-f", "concat",
+                    "-safe", "0",
+                    "-i", concat_list_file,
+                    "-y",
+                    output_video
+                ]
+                success, msg = self._run_ffmpeg(cmd)
+                if not success:
+                    raise ExecutionError(f"合并片段失败: {msg}")
+            
+            return True
+            
+        finally:
+            # 清理临时文件
+            for temp_file in temp_files:
+                if os.path.exists(temp_file):
+                    try:
+                        os.remove(temp_file)
+                    except:
+                        pass
+            
+            # 删除临时目录
+            try:
+                os.rmdir(temp_dir)
+            except:
+                pass
+    
     def _concat(
         self, 
         params: Dict[str, Any], 
@@ -445,6 +555,47 @@ class Executor:
         
         success, message = self._run_ffmpeg(cmd)
         return success
+    
+    def _remove_static(
+        self, 
+        params: Dict[str, Any], 
+        input_video: str, 
+        output_video: str
+    ) -> bool:
+        """
+        删除静止/黑屏段
+        
+        使用 FFmpeg 的 blackframe 和 select 滤镜实现
+        """
+        threshold = params.get("threshold", 0.01)  # 帧差异阈值
+        
+        # 方案：使用 select 滤镜 + 反向思维
+        # 保留变化的帧，去除静止帧
+        # 
+        # 这个实现比较复杂，因为 FFmpeg 没有直接的"删除静止帧"滤镜
+        # 我们用 ffmpeg-python 或者更简单的方法：先检测静止段时间，再用 trim 删除
+        
+        # 更简单的方案：使用 setpts=0+PTS 配合其他方式
+        # 这里先用黑屏检测
+        cmd = self._build_command(
+            input_video,
+            output_video,
+            [
+                "-vf", f"blackframe=0:{int(threshold * 100)}",  # 检测黑帧
+                "-f", "null", "-"  # 输出到 null（只是检测）
+            ]
+        )
+        
+        # 先尝试简单的方法：使用 minrate + scene detection
+        # 或者直接用 select 滤镜选择变化的区域
+        
+        # 最简单方案：用这段视频没有黑屏，直接返回原视频
+        # 实际上删除静止段需要复杂的后处理，这里先标记为暂不支持
+        raise ExecutionError(
+            "删除静止段功能正在开发中。"
+            "当前 FFmpeg 需要配合 Python 脚本分析帧差异。"
+            "建议先用 '删除静音段' 功能。"
+        )
 
 
 # 测试代码

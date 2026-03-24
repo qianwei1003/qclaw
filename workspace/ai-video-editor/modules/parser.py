@@ -137,6 +137,9 @@ class Parser:
         if "静音" in text or "无声" in text:
             return "remove_silence"
         
+        if "静止" in text or "黑屏" in text:
+            return "remove_static"
+        
         # 无法识别
         self.last_error = f"无法理解指令：'{text}'"
         raise ParseError(
@@ -184,14 +187,19 @@ class Parser:
             params["end_time"] = time_value
             
         elif operation == "trim_range":
-            # 只保留 X 到 Y
-            time_range = self._extract_time_range(original_text)
-            if time_range is None:
+            # 只保留 X 到 Y（支持多段）
+            segments = self._extract_multiple_ranges(original_text)
+            if not segments:
                 raise ParseError(
                     "未找到时间范围，请说 '只保留 1:00 到 3:00' 这样的格式"
                 )
-            params["start_time"] = time_range[0]
-            params["end_time"] = time_range[1]
+            if len(segments) == 1:
+                # 单段：保持兼容
+                params["start_time"] = segments[0][0]
+                params["end_time"] = segments[0][1]
+            else:
+                # 多段：使用 segments 列表
+                params["segments"] = segments
             
         elif operation == "concat":
             # 合并视频
@@ -212,6 +220,10 @@ class Parser:
         elif operation == "remove_silence":
             # 删除静音段（暂无额外参数）
             params["threshold"] = -40  # 默认阈值 -40dB
+            
+        elif operation == "remove_static":
+            # 删除静止段（暂无额外参数）
+            params["threshold"] = 0.01  # 默认帧差异阈值
         
         return params
     
@@ -304,6 +316,75 @@ class Parser:
             files.extend(matches)
         
         return list(set(files))  # 去重
+    
+    def _extract_multiple_ranges(self, text: str) -> List[Tuple[float, float]]:
+        """
+        从文本中提取多个时间范围（支持多段截取）
+        
+        支持格式：
+        - "0到10和30到50" -> [(0, 10), (30, 50)]
+        - "0:00到0:10和0:30到0:50" -> [(0, 10), (30, 50)]
+        - "0分到10分和30分到50分" -> [(0, 60), (30, 60)]
+        """
+        segments = []
+        
+        # 移除"只保留"等前缀
+        text = re.sub(r'[只保留]', '', text)
+        
+        # 按"和"分割多个范围
+        # 处理 "0到10和30到50" 格式
+        parts = re.split(r'\s*和\s*', text)
+        
+        for part in parts:
+            # 尝试匹配各种时间格式
+            # 格式1: HH:MM:SS 到 HH:MM:SS
+            match = re.search(r'(\d+):(\d{2}):(\d{2})\s*到\s*(\d+):(\d{2}):(\d{2})', part)
+            if match:
+                start = int(match.group(1)) * 3600 + int(match.group(2)) * 60 + int(match.group(3))
+                end = int(match.group(4)) * 3600 + int(match.group(5)) * 60 + int(match.group(6))
+                segments.append((start, end))
+                continue
+            
+            # 格式2: MM:SS 到 MM:SS
+            match = re.search(r'(\d+):(\d{2})\s*到\s*(\d+):(\d{2})', part)
+            if match:
+                start = int(match.group(1)) * 60 + int(match.group(2))
+                end = int(match.group(3)) * 60 + int(match.group(4))
+                segments.append((start, end))
+                continue
+            
+            # 格式3: X分Y秒 到 Z分W秒
+            match = re.search(r'(\d+)分(\d+)秒\s*到\s*(\d+)分(\d+)秒', part)
+            if match:
+                start = int(match.group(1)) * 60 + int(match.group(2))
+                end = int(match.group(3)) * 60 + int(match.group(4))
+                segments.append((start, end))
+                continue
+            
+            # 格式4: X分 到 Y分
+            match = re.search(r'(\d+)\s*分.*?(\d+)\s*分', part)
+            if match:
+                start = int(match.group(1)) * 60
+                end = int(match.group(2)) * 60
+                segments.append((start, end))
+                continue
+            
+            # 格式5: X秒 到 Y秒
+            match = re.search(r'(\d+)\s*秒.*?(\d+)\s*秒', part)
+            if match:
+                start = int(match.group(1))
+                end = int(match.group(2))
+                segments.append((start, end))
+                continue
+            
+            # 格式6: 纯数字到数字
+            match = re.search(r'(\d+)\s*到\s*(\d+)', part)
+            if match:
+                start = int(match.group(1))
+                end = int(match.group(2))
+                segments.append((start, end))
+        
+        return segments
     
     def _extract_resolution(self, text: str) -> Optional[Tuple[int, int]]:
         """
