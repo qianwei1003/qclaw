@@ -1,0 +1,54 @@
+# .clineignore - 基于 .gitignore 的 cline 忽略规则
+
+# Backups and caches
+backups/
+compile-cache/
+*.bak
+*.bak.*
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+memory/
+qmemory/
+media/
+
+# Session history (sensitive)
+agents/main/sessions
+agents/main/agent/models.json
+*.jsonl
+*.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+tmp/
+temp/
+*.tmp
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Browser cache
+browser/
+devices
+openclaw.json
+plugins
+qclaw.json
+identity
+pcmgr-ai-security_cache.json
+weixin
+cron
+canvas
