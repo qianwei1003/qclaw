@@ -137,6 +137,9 @@ class Parser:
         if "静音" in text or "无声" in text:
             return "remove_silence"
         
+        if "静止" in text or "黑屏" in text:
+            return "remove_static"
+        
         # 无法识别
         self.last_error = f"无法理解指令：'{text}'"
         raise ParseError(
@@ -217,6 +220,10 @@ class Parser:
         elif operation == "remove_silence":
             # 删除静音段（暂无额外参数）
             params["threshold"] = -40  # 默认阈值 -40dB
+            
+        elif operation == "remove_static":
+            # 删除静止段（暂无额外参数）
+            params["threshold"] = 0.01  # 默认帧差异阈值
         
         return params
     

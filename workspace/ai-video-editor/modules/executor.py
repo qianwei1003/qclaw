@@ -89,6 +89,9 @@ class Executor:
         elif operation == "remove_silence":
             return self._remove_silence(params, input_video, output_video)
         
+        elif operation == "remove_static":
+            return self._remove_static(params, input_video, output_video)
+        
         else:
             raise ExecutionError(f"不支持的操作类型: {operation}")
     
@@ -552,6 +555,47 @@ class Executor:
         
         success, message = self._run_ffmpeg(cmd)
         return success
+    
+    def _remove_static(
+        self, 
+        params: Dict[str, Any], 
+        input_video: str, 
+        output_video: str
+    ) -> bool:
+        """
+        删除静止/黑屏段
+        
+        使用 FFmpeg 的 blackframe 和 select 滤镜实现
+        """
+        threshold = params.get("threshold", 0.01)  # 帧差异阈值
+        
+        # 方案：使用 select 滤镜 + 反向思维
+        # 保留变化的帧，去除静止帧
+        # 
+        # 这个实现比较复杂，因为 FFmpeg 没有直接的"删除静止帧"滤镜
+        # 我们用 ffmpeg-python 或者更简单的方法：先检测静止段时间，再用 trim 删除
+        
+        # 更简单的方案：使用 setpts=0+PTS 配合其他方式
+        # 这里先用黑屏检测
+        cmd = self._build_command(
+            input_video,
+            output_video,
+            [
+                "-vf", f"blackframe=0:{int(threshold * 100)}",  # 检测黑帧
+                "-f", "null", "-"  # 输出到 null（只是检测）
+            ]
+        )
+        
+        # 先尝试简单的方法：使用 minrate + scene detection
+        # 或者直接用 select 滤镜选择变化的区域
+        
+        # 最简单方案：用这段视频没有黑屏，直接返回原视频
+        # 实际上删除静止段需要复杂的后处理，这里先标记为暂不支持
+        raise ExecutionError(
+            "删除静止段功能正在开发中。"
+            "当前 FFmpeg 需要配合 Python 脚本分析帧差异。"
+            "建议先用 '删除静音段' 功能。"
+        )
 
 
 # 测试代码
