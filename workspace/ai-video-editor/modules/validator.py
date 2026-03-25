@@ -3,10 +3,12 @@ Validator 模块 - 视频验证器
 检查输出视频是否正确生成
 """
 
+from __future__ import annotations
+
 import os
 import re
 import subprocess
-from typing import Dict, Any, Optional, Tuple
+from typing import Any, Optional
 
 
 class ValidationError(Exception):
@@ -32,10 +34,10 @@ class Validator:
     def validate(
         self, 
         output_video: str,
-        expected_duration: float = None,
-        expected_resolution: Tuple[int, int] = None,
-        min_file_size: int = 1024  # 最小文件大小 1KB
-    ) -> Dict[str, Any]:
+        expected_duration: float | None = None,
+        expected_resolution: tuple[int, int] | None = None,
+        min_file_size: int = 1024,
+    ) -> dict[str, Any]:
         """
         验证输出视频
         
@@ -130,7 +132,7 @@ class Validator:
         
         return result
     
-    def get_video_metadata(self, video_path: str) -> Optional[Dict[str, Any]]:
+    def get_video_metadata(self, video_path: str) -> dict[str, Any] | None:
         """
         获取视频元数据
         
@@ -176,9 +178,10 @@ class Validator:
                 )
             
             # 提取视频流信息
-            # 格式: Stream #0:0: Video: h264, ... 1920x1080, ... 30 fps
+            # Match: Stream #0:0: Video: h264, ... 1920x1080, ... 30 fps, 30 tbr
+            # Also handles variable fps like: 90000/3002 tbr, 29.97 tbn, 29.97 tbc
             video_stream_match = re.search(
-                r'Stream.*Video:\s*\w+.*?(\d{2,5})x(\d{2,5}).*?(\d+(?:\.\d+)?)\s*fps',
+                r'Stream\s+#\d+:\d+.*?Video:\s*\w+.*?(\d{2,5})x(\d{2,5}).*?(\d+(?:\.\d+)?)\s*fps',
                 output
             )
             

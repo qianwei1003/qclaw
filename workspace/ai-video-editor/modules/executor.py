@@ -3,10 +3,13 @@ Executor 模块 - 视频处理执行器
 根据结构化指令调用 FFmpeg 执行视频处理
 """
 
-import subprocess
+from __future__ import annotations
+
 import os
 import re
-from typing import Dict, Any, Tuple, Optional, List
+import subprocess
+import tempfile
+from typing import Any, Optional
 
 
 class ExecutionError(Exception):
@@ -21,21 +24,15 @@ class Executor:
     """
     
     def __init__(self, ffmpeg_path: str = "ffmpeg"):
-        """
-        初始化执行器
-        
-        Args:
-            ffmpeg_path: FFmpeg 可执行文件路径，默认使用系统 PATH 中的 ffmpeg
-        """
         self.ffmpeg_path = ffmpeg_path
-        self.last_command = None
-        self.last_output = None
+        self.last_command: str | None = None
+        self.last_output: str | None = None
     
     def execute(
         self, 
-        instruction: Dict[str, Any], 
+        instruction: dict[str, Any], 
         input_video: str, 
-        output_video: str
+        output_video: str,
     ) -> bool:
         """
         执行视频处理指令
@@ -100,15 +97,14 @@ class Executor:
     
     def _normalize_path(self, path: str) -> str:
         """标准化路径格式"""
-        # 替换反斜杠为正斜杠（Windows 兼容）
         return path.replace('\\', '/')
     
     def _build_command(
         self, 
         input_video: str, 
         output_video: str, 
-        extra_args: list
-    ) -> list:
+        extra_args: list[str],
+    ) -> list[str]:
         """构建 FFmpeg 命令"""
         cmd = [
             self.ffmpeg_path,
@@ -119,7 +115,7 @@ class Executor:
         ]
         return cmd
     
-    def _run_ffmpeg(self, cmd: list) -> Tuple[bool, str]:
+    def _run_ffmpeg(self, cmd: list[str]) -> tuple[bool, str]:
         """
         运行 FFmpeg 命令
         
@@ -197,10 +193,10 @@ class Executor:
     
     def _trim_start(
         self, 
-        params: Dict[str, Any], 
+        params: dict[str, Any], 
         input_video: str, 
         output_video: str,
-        total_duration: float
+        total_duration: float,
     ) -> bool:
         """
         删除视频开头部分
@@ -238,24 +234,23 @@ class Executor:
     
     def _trim_end(
         self, 
-        params: Dict[str, Any], 
+        params: dict[str, Any], 
         input_video: str, 
         output_video: str,
-        total_duration: float
+        total_duration: float,
     ) -> bool:
         """
         删除视频结尾部分
         
         Args:
-            params: 参数 (end_time)
-            input_video: 输入视频
-            output_video: 输出视频
-            total_duration: 视频总时长
+            params: 参数 trim_seconds (int): 要删除的秒数。
+                    兼容旧参数名 end_time。
         """
-        end_time = params["end_time"]
+        # trim_seconds: how many seconds to remove from the end
+        trim_seconds = params.get("trim_seconds", params.get("end_time", 0))
         
         # 计算实际结束时间
-        actual_end = total_duration - end_time
+        actual_end = total_duration - trim_seconds
         
         if actual_end <= 0:
             raise ExecutionError("删除时长不能超过视频总时长")
@@ -433,9 +428,9 @@ class Executor:
     
     def _concat(
         self, 
-        params: Dict[str, Any], 
+        params: dict[str, Any], 
         input_video: str, 
-        output_video: str
+        output_video: str,
     ) -> bool:
         """
         合并多个视频
@@ -450,8 +445,9 @@ class Executor:
         if len(files) < 2:
             raise ExecutionError("合并操作至少需要两个视频文件")
         
-        # 创建临时文件列表
-        temp_list_file = "temp_concat_list.txt"
+        # Use tempfile for the concat list (concurrency-safe)
+        fd, temp_list_file = tempfile.mkstemp(suffix=".txt", prefix="concat_")
+        os.close(fd)
         
         try:
             # 写入文件列表
@@ -464,10 +460,10 @@ class Executor:
             cmd = [
                 self.ffmpeg_path,
                 "-f", "concat",
-                "-safe", "0",  # 允许相对路径
+                "-safe", "0",
                 "-i", temp_list_file,
-                "-c", "copy",  # 直接复制，不重新编码
-                "-y",  # 覆盖
+                "-c", "copy",
+                "-y",
                 output_video
             ]
             
@@ -497,7 +493,6 @@ class Executor:
             return True
             
         finally:
-            # 清理临时文件
             if os.path.exists(temp_list_file):
                 os.remove(temp_list_file)
     

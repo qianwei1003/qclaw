@@ -8,6 +8,7 @@ Shared analysis layer for V2/V3/V4 stages:
   - analyze_audio_energy()     Per-window RMS energy curve
   - detect_static_segments()   Detect frozen-frame segments
   - extract_scene_thumbnails() Extract one thumbnail per scene
+  - analyze_content_density()  Scene + audio joint analysis (V2 Step 5)
 """
 
 import os
@@ -139,6 +140,16 @@ class Analyzer:
 
         result = self._run(cmd)
         if result.returncode != 0 or not os.path.exists(output_audio):
+            # Check if the error is "no audio stream"
+            stderr = result.stderr or ""
+            if "does not contain any stream" in stderr or "no audio" in stderr.lower():
+                # Clean up the empty temp file created by mkstemp
+                if os.path.exists(output_audio):
+                    try:
+                        os.remove(output_audio)
+                    except OSError:
+                        pass
+                return ""
             raise AnalyzerError(
                 f"Audio extraction failed.\nFFmpeg stderr:\n{result.stderr[-500:]}"
             )
@@ -154,17 +165,19 @@ class Analyzer:
         input_video: str,
         threshold: float = 0.4,
         min_scene_duration: float = 1.0,
-    ) -> list[dict]:
+        _return_diffs: bool = False,
+    ) -> list[dict] | tuple[list[dict], float, list[tuple[int, float, float]]]:
         """Detect scene cuts using frame-difference analysis.
 
         Args:
             input_video:         Path to the source video.
             threshold:           Diff score threshold (0–1). Lower = more sensitive.
             min_scene_duration:  Minimum scene length in seconds.
+            _return_diffs:       If True, also return (fps, frame_diffs).
+                                 Internal use — avoids redundant frame iteration.
 
         Returns:
-            List of scene dicts:
-            [{"index": 0, "start": 0.0, "end": 12.3, "duration": 12.3}, ...]
+            List of scene dicts, or (scenes, fps, frame_diffs) if _return_diffs.
 
         Raises:
             AnalyzerError: If the video cannot be opened.
@@ -173,6 +186,8 @@ class Analyzer:
 
         fps, frame_diffs = self._iter_frame_diffs(input_video)
         if not frame_diffs:
+            if _return_diffs:
+                return [], fps, frame_diffs
             return []
 
         total_duration = frame_diffs[-1][1] + (1.0 / fps)
@@ -185,7 +200,7 @@ class Analyzer:
 
         cut_times.append(total_duration)
 
-        return [
+        scenes = [
             {
                 "index": i,
                 "start": round(cut_times[i], 3),
@@ -194,6 +209,10 @@ class Analyzer:
             }
             for i in range(len(cut_times) - 1)
         ]
+
+        if _return_diffs:
+            return scenes, fps, frame_diffs
+        return scenes
 
     # ------------------------------------------------------------------
     # extract_thumbnail
@@ -272,6 +291,27 @@ class Analyzer:
         self._require_file(input_video)
 
         tmp_wav = self.extract_audio(input_video, sample_rate=sample_rate, channels=1)
+
+        # Video has no audio track
+        if not tmp_wav or not os.path.exists(tmp_wav) or os.path.getsize(tmp_wav) == 0:
+            # Get video duration to produce zero-energy windows
+            cap = cv2.VideoCapture(input_video)
+            if cap.isOpened():
+                fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                cap.release()
+                duration = frame_count / fps if fps else 0.0
+            else:
+                duration = 0.0
+            windows: list[dict] = []
+            window_count = int(duration / window_size) if window_size > 0 else 0
+            for i in range(max(window_count, 0)):
+                windows.append({
+                    "start": round(i * window_size, 3),
+                    "end": round((i + 1) * window_size, 3),
+                    "energy": 0.0,
+                })
+            return windows
 
         try:
             cmd = [
@@ -410,3 +450,157 @@ class Analyzer:
             paths.append(saved)
 
         return paths
+
+    # ------------------------------------------------------------------
+    # analyze_content_density  (V2 Step 5)
+    # ------------------------------------------------------------------
+
+    def analyze_content_density(
+        self,
+        input_video: str,
+        scene_threshold: float = 0.4,
+        min_scene_duration: float = 1.0,
+        energy_window_size: float = 1.0,
+        audio_weight: float = 0.6,
+        visual_weight: float = 0.4,
+        content_threshold: float = 0.3,
+    ) -> dict:
+        """Joint scene + audio analysis to identify "content-rich" scenes.
+
+        Combines audio energy distribution and visual frame-difference
+        activity within each scene to produce a content density score.
+
+        Args:
+            input_video:         Path to the source video.
+            scene_threshold:     Frame-diff threshold for scene detection (0–1).
+            min_scene_duration:  Minimum scene length in seconds.
+            energy_window_size:  Audio analysis window in seconds.
+            audio_weight:        Weight for audio energy in final score (must be > 0).
+            visual_weight:       Weight for visual activity in final score (must be > 0).
+            content_threshold:   Scenes scoring above this are "has_content".
+
+        Returns:
+            {
+                "scenes": [
+                    {
+                        "index": 0,
+                        "start": 0.0, "end": 12.3, "duration": 12.3,
+                        "audio_score": 0.72,     // mean energy in this scene [0,1]
+                        "visual_score": 0.85,    // mean normalised diff in this scene [0,1]
+                        "content_score": 0.77,   // weighted combination [0,1]
+                        "has_content": true,     // content_score >= content_threshold
+                    },
+                    ...
+                ],
+                "content_scenes": [0, 2, 5],    // indices of scenes with content
+                "summary": {
+                    "total_scenes": 8,
+                    "content_count": 3,
+                    "content_ratio": 0.375,
+                    "total_duration": 120.5,
+                    "content_duration": 45.2,
+                }
+            }
+
+        Raises:
+            AnalyzerError: If analysis fails or weights are invalid.
+        """
+        self._require_file(input_video)
+
+        # --- Validate & normalise weights ---
+        weight_sum = audio_weight + visual_weight
+        if weight_sum <= 0:
+            raise AnalyzerError("audio_weight + visual_weight must be > 0")
+        a_w = audio_weight / weight_sum
+        v_w = visual_weight / weight_sum
+
+        # --- Single-pass scene detection + frame diffs (avoids double iteration) ---
+        scenes, fps, frame_diffs = self.detect_scenes(
+            input_video,
+            threshold=scene_threshold,
+            min_scene_duration=min_scene_duration,
+            _return_diffs=True,
+        )
+
+        if not scenes:
+            return {
+                "scenes": [],
+                "content_scenes": [],
+                "summary": {
+                    "total_scenes": 0,
+                    "content_count": 0,
+                    "content_ratio": 0.0,
+                    "total_duration": 0.0,
+                    "content_duration": 0.0,
+                },
+            }
+
+        energy_windows = self.analyze_audio_energy(
+            input_video,
+            window_size=energy_window_size,
+        )
+
+        # --- Global max frame diff for visual normalisation ---
+        max_diff = max((score for _, _, score in frame_diffs), default=0.0) or 1.0
+
+        # --- Downsample frame_diffs for visual scoring (cap ~2000 samples) ---
+        total_frames = len(frame_diffs)
+        sample_step = max(1, total_frames // 2000)
+        sampled_diffs = frame_diffs[::sample_step]
+
+        # --- Score each scene ---
+        enriched: list[dict] = []
+        content_indices: list[int] = []
+        content_duration = 0.0
+        total_duration = 0.0
+
+        for scene in scenes:
+            s_start = scene["start"]
+            s_end = scene["end"]
+
+            # Audio score: mean energy of windows overlapping this scene [0,1]
+            audio_scores = [
+                w["energy"]
+                for w in energy_windows
+                if w["end"] > s_start and w["start"] < s_end
+            ]
+            a_score = (sum(audio_scores) / len(audio_scores)) if audio_scores else 0.0
+
+            # Visual score: mean normalised frame-diff within this scene [0,1]
+            v_scores = [
+                score / max_diff
+                for _, timestamp, score in sampled_diffs
+                if s_start <= timestamp <= s_end
+            ]
+            v_score = (sum(v_scores) / len(v_scores)) if v_scores else 0.0
+
+            content_score = round(a_w * a_score + v_w * v_score, 4)
+            has_content = content_score >= content_threshold
+
+            enriched.append({
+                **scene,
+                "audio_score": round(a_score, 4),
+                "visual_score": round(v_score, 4),
+                "content_score": content_score,
+                "has_content": has_content,
+            })
+
+            total_duration += scene["duration"]
+            if has_content:
+                content_indices.append(scene["index"])
+                content_duration += scene["duration"]
+
+        total_scenes = len(enriched)
+        content_count = len(content_indices)
+
+        return {
+            "scenes": enriched,
+            "content_scenes": content_indices,
+            "summary": {
+                "total_scenes": total_scenes,
+                "content_count": content_count,
+                "content_ratio": round(content_count / total_scenes, 4) if total_scenes else 0.0,
+                "total_duration": round(total_duration, 3),
+                "content_duration": round(content_duration, 3),
+            },
+        }

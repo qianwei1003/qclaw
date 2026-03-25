@@ -22,7 +22,7 @@ import sys
 
 # Resolve project root so this script can be run from any working directory
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.join(SCRIPT_DIR, "..", "..", "ai-video-editor")
+PROJECT_ROOT = SCRIPT_DIR
 sys.path.insert(0, PROJECT_ROOT)
 
 from modules.executor import Executor, ExecutionError
@@ -40,9 +40,9 @@ OPERATIONS: dict[str, dict] = {
         "example_params": {"start_time": 5.0},
     },
     "trim_end": {
-        "description": "Remove the end of a video.",
-        "required_params": ["end_time"],
-        "example_params": {"end_time": 10.0},
+        "description": "Remove N seconds from the end of a video.",
+        "required_params": ["trim_seconds"],
+        "example_params": {"trim_seconds": 10.0},
     },
     "trim_range": {
         "description": "Keep only a specific time range (single or multiple segments).",
@@ -83,6 +83,17 @@ OPERATIONS: dict[str, dict] = {
         "description": "Get video metadata (duration, resolution, fps, codec).",
         "required_params": [],
         "example_params": {},
+    },
+    "analyze_content": {
+        "description": "Joint scene + audio analysis. Scores each scene by audio energy and visual activity to identify 'content-rich' scenes.",
+        "required_params": [],
+        "example_params": {
+            "scene_threshold": 0.4,
+            "min_scene_duration": 1.0,
+            "audio_weight": 0.6,
+            "visual_weight": 0.4,
+            "content_threshold": 0.3,
+        },
     },
 }
 
@@ -203,6 +214,33 @@ def main() -> int:
             return 0
         except AnalyzerError as e:
             print_result(False, f"Scene detection failed: {e}")
+            return 1
+
+    # analyze_content operation — no output needed, returns scored scenes
+    if args.operation == "analyze_content":
+        from modules.analyzer import Analyzer, AnalyzerError
+        analyzer = Analyzer()
+        try:
+            result = analyzer.analyze_content_density(
+                input_video,
+                scene_threshold=params.get("scene_threshold", 0.4),
+                min_scene_duration=params.get("min_scene_duration", 1.0),
+                energy_window_size=params.get("energy_window_size", 1.0),
+                audio_weight=params.get("audio_weight", 0.6),
+                visual_weight=params.get("visual_weight", 0.4),
+                content_threshold=params.get("content_threshold", 0.3),
+            )
+            summary = result["summary"]
+            print_result(
+                True,
+                f"Analyzed {summary['total_scenes']} scenes, "
+                f"{summary['content_count']} have content "
+                f"({summary['content_ratio']:.0%})",
+                result,
+            )
+            return 0
+        except AnalyzerError as e:
+            print_result(False, f"Content analysis failed: {e}")
             return 1
 
     # All other operations require --output

@@ -1,7 +1,7 @@
 # 进度
 
 ## 当前状态
-V1 和 V2 Step 1-4 已完成。下一步：V2 Step 5（场景+音频联合分析）。
+V1 和 V2 Step 1-5 已完成。下一步：V2 Step 6（AI 辅助场景选择）。
 
 ## 已完成
 
@@ -17,18 +17,16 @@ V1 和 V2 Step 1-4 已完成。下一步：V2 Step 5（场景+音频联合分析
 - `detect_scenes` — 检测场景切换点（OpenCV 帧差分析）
 - `split_by_scenes` — 按场景切割为多个文件
 - `extract_scene_thumbnails` — 为每个场景提取缩略图
+- `analyze_content` — 场景+音频联合分析，标记"有内容"场景（V2 Step 5）
 - `edit_video.py` — AI 可调用的结构化 CLI，覆盖以上所有操作
-- `Analyzer` 模块 — `extract_audio`、`detect_scenes`、`extract_thumbnail`、`analyze_audio_energy`、`detect_static_segments`、`extract_scene_thumbnails`
+- `Analyzer` 模块 — `extract_audio`、`detect_scenes`、`extract_thumbnail`、`analyze_audio_energy`、`detect_static_segments`、`extract_scene_thumbnails`、`analyze_content_density`
 - `Validator` — 每次操作后验证输出文件
+- `extract_audio` 无音频视频优雅降级（返回空路径，analyze_audio_energy 生成零能量窗口）
 
 ## 进行中
-- V2 Step 5：场景 + 音频联合分析
+- V2 Step 6：AI 辅助场景选择
 
 ## 未开始
-
-**V2 Step 5 — 场景+音频联合分析**
-- 结合 `analyze_audio_energy()` 找出高能量场景
-- 自动标记"有内容"的场景
 
 **V2 Step 6 — AI 辅助场景选择**
 - AI 根据用户意图推荐场景
@@ -60,6 +58,6 @@ V1 和 V2 Step 1-4 已完成。下一步：V2 Step 5（场景+音频联合分析
 | edit_video.py AI 入口 | ✅ 完成 | 2026-03-25 |
 | memory-bank 初始化 | ✅ 完成 | 2026-03-25 |
 | V2 detect_scenes + split_by_scenes | ✅ 完成 | 2026-03-25 |
-| V2 场景+音频联合分析 | ⏳ 计划中 | — |
+| V2 场景+音频联合分析 | ✅ 完成 | 2026-03-25 |
 | V3 自动字幕 | ⏳ 计划中 | — |
 | V4 智能剪辑 | ⏳ 计划中 | — |
