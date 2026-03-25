@@ -1,60 +1,60 @@
-# AI Context
+# AI 调用上下文
 
-## How AI Uses This Tool
-AI receives a user's natural language editing request, maps it to a structured operation and params, calls `edit_video.py`, parses the JSON result, and reports back to the user.
+## AI 如何使用本工具
+AI 接收用户的自然语言剪辑需求，映射为结构化操作和参数，调用 `edit_video.py`，解析 JSON 结果，向用户报告。
 
-## Tool Interface
+## 工具接口
 
-| Script | Location | Input | Output |
+| 脚本 | 位置 | 输入 | 输出 |
 |---|---|---|---|
-| `edit_video.py` | project root | `--operation`, `--input`, `--output`, `--params JSON` | `{"success": bool, "message": str, "data": dict}` |
+| `edit_video.py` | 项目根目录 | `--operation`、`--input`、`--output`、`--params JSON` | `{"success": bool, "message": str, "data": dict}` |
 
-## Supported Operations
+## 支持的操作
 
-| Operation | Required params | Optional params |
+| 操作 | 必填参数 | 可选参数 |
 |---|---|---|
-| `trim_start` | `start_time` (float, seconds) | — |
-| `trim_end` | `end_time` (float, seconds) | — |
-| `trim_range` | `start_time`, `end_time` (float) | — |
-| `concat` | `files` (list of paths) | — |
-| `convert` | `width`, `height` (int, pixels) | — |
-| `remove_silence` | — | `threshold` (dB, default -40) |
-| `remove_static` | — | `threshold` (0–1, default 0.01), `min_static_duration` (seconds, default 1.0) |
-| `info` | — (no `--output` needed) | — |
+| `trim_start` | `start_time`（浮点数，秒） | — |
+| `trim_end` | `end_time`（浮点数，秒） | — |
+| `trim_range` | `start_time`、`end_time`（浮点数） | — |
+| `concat` | `files`（路径列表） | — |
+| `convert` | `width`、`height`（整数，像素） | — |
+| `remove_silence` | — | `threshold`（dB，默认 -40） |
+| `remove_static` | — | `threshold`（0–1，默认 0.01）、`min_static_duration`（秒，默认 1.0） |
+| `info` | —（不需要 `--output`） | — |
 
-## Calling Conventions
-- All paths must be **absolute**
-- `--params` value must be valid JSON with **double quotes**
-- Time values always in **float seconds** (convert "1:30" → 90.0 before calling)
-- Always check `success` field first before reading `data`
-- On missing params error, response includes `data.example` — use it to self-correct
+## 调用约定
+- 所有路径必须是**绝对路径**
+- `--params` 值必须是合法 JSON，使用**双引号**
+- 时间值统一用**浮点秒数**（调用前将 "1:30" 转为 90.0）
+- 先检查 `success` 字段，再读取 `data`
+- 参数缺失时，响应中包含 `data.example`，可直接用于重试
 
-## AI Decision Responsibilities
+## AI 职责划分
 
-| AI decides | Tool handles |
+| AI 负责 | 工具负责 |
 |---|---|
-| Which operation matches user intent | FFmpeg command construction |
-| Parameter values from natural language | Path normalization |
-| Output file naming (if not specified) | Temp file management |
-| Error recovery strategy | Output validation |
+| 判断用户意图对应哪个操作 | FFmpeg 命令构建 |
+| 从自然语言中提取参数值 | 路径格式标准化 |
+| 输出文件命名（用户未指定时） | 临时文件管理 |
+| 错误恢复策略 | 输出验证 |
 
-## Output File Naming Convention
-If user does not specify output path:
+## 输出文件命名规范
+用户未指定输出路径时：
 ```
-<input_stem>_<operation>.<ext>
-e.g. interview_trim_start.mp4
+<输入文件名>_<操作名>.<扩展名>
+例：interview_trim_start.mp4
 ```
 
-## Error Self-Correction Pattern
+## 错误自纠正模式
 ```json
-// AI receives:
+// AI 收到：
 {"success": false, "message": "Missing required params for 'trim_start': ['start_time']",
  "data": {"example": {"start_time": 5.0}}}
 
-// AI should: add start_time and retry
+// AI 应：补充 start_time 参数后重试
 ```
 
-## Anti-Patterns
-- ❌ Do NOT pass natural language to `--params` — always structured JSON
-- ❌ Do NOT use relative paths — always resolve to absolute before calling
-- ❌ Do NOT call Analyzer directly — use `edit_video.py` as the single entry point
+## 禁止行为
+- ❌ 不要将自然语言传给 `--params`，必须是结构化 JSON
+- ❌ 不要使用相对路径，调用前必须转为绝对路径
+- ❌ 不要直接调用 Analyzer，`edit_video.py` 是唯一入口

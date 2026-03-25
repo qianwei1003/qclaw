@@ -1,30 +1,30 @@
-# Project Brief
+# 项目简介
 
-## Goal
-An AI-driven video editing tool that lets users edit videos through natural language instructions, with AI handling intent understanding and structured tools handling execution.
+## 目标
+一个 AI 驱动的视频剪辑工具，用户通过自然语言描述剪辑需求，AI 理解意图并调用结构化工具执行，无需手动操作。
 
-## Core Requirements
-- Accept natural language editing instructions (via AI, not hardcoded NLP)
-- Execute video operations via FFmpeg: trim, concat, convert, remove silence, remove static
-- Analyze video content: scene detection, audio energy, thumbnails
-- Validate output correctness after every operation
-- Expose a structured CLI (`edit_video.py`) that AI can call directly
+## 核心需求
+- 接受自然语言剪辑指令（由 AI 理解，不用硬编码关键词匹配）
+- 通过 FFmpeg 执行视频操作：裁剪、合并、转换、删除静音、删除静止画面
+- 分析视频内容：场景检测、音频能量分析、缩略图提取
+- 每次操作后验证输出正确性
+- 提供结构化 CLI（`edit_video.py`）供 AI 直接调用
 
-## Scope
-**In scope:**
-- V1: Basic editing — trim, concat, convert, remove silence, remove static frames
-- V2: Scene detection and splitting
-- V3: Auto subtitles via Whisper
-- V4: Intelligent highlight extraction and short video generation
-- Shared analysis layer (Analyzer module) reused across all stages
+## 范围
+**包含：**
+- V1：基础剪辑 — 裁剪、合并、转换、删除静音、删除静止帧
+- V2：场景检测与分割
+- V3：Whisper 自动字幕
+- V4：智能精彩片段提取与短视频生成
+- 共用分析层（Analyzer 模块），供所有阶段复用
 
-**Out of scope:**
-- GUI / web interface
-- Real-time / live video processing
-- Video recording or capture
-- Cloud storage or upload
+**不包含：**
+- GUI / Web 界面
+- 实时 / 直播视频处理
+- 视频录制或采集
+- 云存储或上传
 
-## Success Criteria
-- AI can call `edit_video.py` with structured params and get reliable JSON output
-- All V1 operations work correctly on real video files
-- Each stage (V2/V3/V4) builds on shared Analyzer without duplication
+## 成功标准
+- AI 能调用 `edit_video.py` 并获得可靠的 JSON 输出
+- V1 所有操作在真实视频上正确运行
+- V2/V3/V4 各阶段基于共用 Analyzer，无重复代码

@@ -1,59 +1,59 @@
-# System Patterns
+# 系统架构
 
-## Architecture Overview
+## 架构总览
 
 ```
-User / AI
+用户 / AI
     ↓
-edit_video.py          ← AI entry point (structured CLI, JSON output)
+edit_video.py          ← AI 调用入口（结构化 CLI，JSON 输出）
     ↓
-Executor               ← Maps operation → FFmpeg command
+Executor               ← 将操作映射为 FFmpeg 命令
     ↓
-FFmpeg                 ← Actual video processing
+FFmpeg                 ← 实际视频处理
 
-Analyzer               ← Shared analysis layer (used by Executor + future stages)
-    ├── extract_audio
-    ├── detect_scenes
-    ├── extract_thumbnail
-    ├── analyze_audio_energy
-    └── detect_static_segments
+Analyzer               ← 共用分析层（供 Executor 和后续阶段使用）
+    ├── extract_audio          提取音频
+    ├── detect_scenes          场景检测
+    ├── extract_thumbnail      提取缩略图
+    ├── analyze_audio_energy   音频能量分析
+    └── detect_static_segments 静止帧检测
 
-Validator              ← Output verification after every operation
+Validator              ← 每次操作后验证输出
 ```
 
-## Module Responsibilities
+## 模块职责
 
-| Module | File | Responsibility |
+| 模块 | 文件 | 职责 |
 |---|---|---|
-| `edit_video.py` | root | AI-facing CLI; validates params; routes to Executor |
-| `Executor` | `modules/executor.py` | Translates structured instruction → FFmpeg command; handles retries |
-| `Analyzer` | `modules/analyzer.py` | Video/audio analysis; shared across V1–V4 |
-| `Validator` | `modules/validator.py` | Post-execution output validation |
-| `Parser` | `modules/parser.py` | **Deprecated** — natural language parser, no longer used in AI flow |
+| `edit_video.py` | 项目根目录 | AI 调用入口；验证参数；路由到 Executor |
+| `Executor` | `modules/executor.py` | 将结构化指令转为 FFmpeg 命令；处理重试 |
+| `Analyzer` | `modules/analyzer.py` | 视频/音频分析；供 V1–V4 共用 |
+| `Validator` | `modules/validator.py` | 执行后验证输出文件 |
+| `Parser` | `modules/parser.py` | **已废弃** — 自然语言解析器，AI 流程不再使用 |
 
-## Key Design Patterns
+## 关键设计模式
 
-- **Structured instruction contract**: all operations use `{"operation": str, "params": dict}` — Executor never receives raw text
-- **JSON-only output**: `edit_video.py` always returns `{success, message, data}` — AI parses deterministically
-- **Fail loudly with examples**: on missing params, return example params so AI can self-correct without human intervention
-- **Shared analysis layer**: `Analyzer` is instantiated by Executor internally — callers never call Analyzer directly
-- **Auto-fallback in FFmpeg**: `-c copy` attempted first; re-encodes on failure
+- **结构化指令约定**：所有操作使用 `{"operation": str, "params": dict}`，Executor 不接收原始文本
+- **纯 JSON 输出**：`edit_video.py` 始终返回 `{success, message, data}`，AI 可确定性解析
+- **报错附带示例**：参数缺失时返回示例参数，AI 无需人工介入即可自我纠正
+- **共用分析层**：`Analyzer` 由 Executor 内部实例化，调用方不直接调用 Analyzer
+- **FFmpeg 自动降级**：优先尝试 `-c copy`，失败后自动重新编码
 
-## Data Flow
+## 数据流
 
 ```
-AI call → edit_video.py
-  → validate params
-  → build instruction dict
+AI 调用 → edit_video.py
+  → 验证参数
+  → 构建 instruction dict
   → Executor.execute(instruction, input, output)
-      → Analyzer (if needed, e.g. remove_static, remove_silence)
-      → FFmpeg command
+      → Analyzer（按需，如 remove_static、remove_silence）
+      → 构建 FFmpeg 命令
       → _run_ffmpeg()
   → Validator.validate(output)
-  → return JSON result to AI
+  → 返回 JSON 结果给 AI
 ```
 
-## Critical Constraints
-- All paths passed to FFmpeg must use forward slashes (Windows compat — `_normalize_path()`)
-- Temp files must use `tempfile.mkstemp()` — never hardcoded paths (concurrent safety)
-- `cap.release()` must always be in `try/finally` when using OpenCV VideoCapture
+## 关键约束
+- 传给 FFmpeg 的路径必须使用正斜杠（Windows 兼容，通过 `_normalize_path()` 处理）
+- 临时文件必须使用 `tempfile.mkstemp()`，禁止硬编码路径（并发安全）
+- 使用 OpenCV VideoCapture 时，`cap.release()` 必须在 `try/finally` 中执行

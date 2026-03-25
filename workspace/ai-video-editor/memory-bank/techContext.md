@@ -1,48 +1,48 @@
-# Tech Context
+# 技术上下文
 
-## Tech Stack
+## 技术栈
 
-| Layer | Technology | Version | Notes |
+| 层级 | 技术 | 版本 | 备注 |
 |---|---|---|---|
-| Language | Python | 3.12 | |
-| Video processing | FFmpeg | 7.x | Must be in system PATH |
-| Frame analysis | OpenCV | `opencv-python` | Used by Analyzer |
-| Audio analysis | NumPy | latest | PCM processing in Analyzer |
-| Video download | yt-dlp | latest | Separate tool, not in core modules |
+| 语言 | Python | 3.12 | |
+| 视频处理 | FFmpeg | 7.x | 必须在系统 PATH 中 |
+| 帧分析 | OpenCV | `opencv-python` | Analyzer 使用 |
+| 音频分析 | NumPy | 最新版 | Analyzer 中 PCM 处理 |
+| 视频下载 | yt-dlp | 最新版 | 独立工具，不在核心模块中 |
 
-## Development Environment
-- OS: Windows 10 x64
-- Shell: PowerShell
-- Workspace: `C:\Users\admin\.qclaw\workspace\ai-video-editor`
+## 开发环境
+- 操作系统：Windows 10 x64
+- Shell：PowerShell
+- 工作目录：`C:\Users\admin\.qclaw\workspace\ai-video-editor`
 
-## Key Dependencies
+## 关键依赖
 
-| Package | Purpose |
+| 包 | 用途 |
 |---|---|
-| `opencv-python` | Frame-diff analysis for scene detection and static removal |
-| `numpy` | Audio PCM buffer processing in `analyze_audio_energy` |
-| `ffmpeg` (system) | All video/audio operations |
+| `opencv-python` | 场景检测和静止帧删除的帧差分析 |
+| `numpy` | `analyze_audio_energy` 中的音频 PCM 缓冲处理 |
+| `ffmpeg`（系统级） | 所有视频/音频操作 |
 
-## Constraints
-- FFmpeg must be installed separately and available in PATH
-- Windows path separators must be normalized to `/` before passing to FFmpeg (`_normalize_path()`)
-- PowerShell does not support `&&` — use `;` to chain commands
-- JSON params passed via CLI must use double quotes — single quotes fail on PowerShell
+## 约束
+- FFmpeg 需单独安装，不随项目打包
+- 传给 FFmpeg 的 Windows 路径分隔符必须转为 `/`（`_normalize_path()` 处理）
+- PowerShell 不支持 `&&`，链式命令用 `;`
+- CLI 中通过 `--params` 传入的 JSON 必须使用双引号，单引号在 PowerShell 中会失败
 
-## Build & Run
+## 运行方式
 
 ```bash
-# Install Python dependencies
+# 安装 Python 依赖
 pip install opencv-python numpy
 
-# Run a video operation
+# 执行视频操作
 python edit_video.py --operation info --input tests/1.mp4
 
-# List all supported operations
+# 查看所有支持的操作
 python edit_video.py --list-operations
 ```
 
-## Repo
-- Remote: `github.com:qianwei1003/qclaw.git`
-- Branch: `main`
-- Path in repo: `workspace/ai-video-editor/`
+## 代码仓库
+- 远程：`github.com:qianwei1003/qclaw.git`
+- 分支：`main`
+- 项目路径：`workspace/ai-video-editor/`

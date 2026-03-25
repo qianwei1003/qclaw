@@ -1,23 +1,23 @@
-# Product Context
+# 产品背景
 
-## Problem
-Manual video editing is time-consuming and requires technical skill. Existing tools require users to learn complex interfaces. AI can understand editing intent from natural language, but needs reliable, structured tools to execute — not fragile keyword-matching parsers.
+## 问题
+手动视频剪辑耗时且需要专业技能。现有工具需要用户学习复杂界面。AI 能理解自然语言中的剪辑意图，但需要可靠的结构化工具来执行——而不是脆弱的关键词匹配解析器。
 
-## Target Users
-- Developers and technical users who want to automate video editing workflows
-- AI agents (Claude, GPT, etc.) that need a reliable video editing tool interface
-- Content creators who want to script repetitive editing tasks
+## 目标用户
+- 想自动化视频剪辑工作流的开发者和技术用户
+- 需要可靠视频编辑工具接口的 AI Agent（Claude、GPT 等）
+- 想用脚本处理重复剪辑任务的内容创作者
 
-## How It Works (User Perspective)
-1. User (or AI) describes what they want: "remove the first 5 seconds", "delete silent parts"
-2. AI maps intent to a structured operation + params
-3. AI calls `edit_video.py --operation trim_start --input video.mp4 --output out.mp4 --params '{"start_time": 5}'`
-4. Tool executes via FFmpeg, validates output, returns JSON result
-5. AI reports success or handles error
+## 使用方式（用户视角）
+1. 用户（或 AI）描述需求："删除前 5 秒"、"去掉静音部分"
+2. AI 将意图映射为结构化操作 + 参数
+3. AI 调用 `edit_video.py --operation trim_start --input video.mp4 --output out.mp4 --params '{"start_time": 5}'`
+4. 工具通过 FFmpeg 执行，验证输出，返回 JSON 结果
+5. AI 向用户报告结果或处理错误
 
-## Design Goals
-- **AI-first interface** — `edit_video.py` is designed for AI callers, not humans typing commands
-- **Structured over natural language** — AI handles NLP; tools handle execution; no keyword matching in code
-- **Reliable JSON output** — every operation returns `{success, message, data}` so AI can parse deterministically
-- **Composable** — shared Analyzer module reused across V1/V2/V3/V4, no duplication
-- **Fail loudly** — clear error messages with examples so AI can self-correct
+## 设计目标
+- **AI 优先接口** — `edit_video.py` 为 AI 调用者设计，而非人工输入命令
+- **结构化优于自然语言** — AI 负责理解意图，工具负责执行，代码中不做关键词匹配
+- **可靠的 JSON 输出** — 每次操作返回 `{success, message, data}`，AI 可确定性解析
+- **可组合** — 共用 Analyzer 模块供 V1/V2/V3/V4 复用，不重复造轮子
+- **明确报错** — 错误信息附带示例，AI 可自我纠正
