@@ -1,8 +1,8 @@
 # 当前上下文
 
 ## 当前焦点
-V1 已完成。Analyzer 模块已作为 V2/V3/V4 的共用基础建立。
-下一步：开始 V2 场景检测——实现 `split_by_scenes()`。
+V1 和 V2 Step 1-4 已完成（detect_scenes、split_by_scenes、extract_scene_thumbnails）。
+下一步：V2 Step 5——场景 + 音频联合分析。
 
 ## 最近变更
 - 新增 `modules/analyzer.py` — 5 个方法：`extract_audio`、`detect_scenes`、`extract_thumbnail`、`analyze_audio_energy`、`detect_static_segments`
@@ -11,10 +11,8 @@ V1 已完成。Analyzer 模块已作为 V2/V3/V4 的共用基础建立。
 - 整合 `memory-bank/`：合并旧 `docs/` 到 `api-reference.md`、`design-decisions.md`、`error-handling.md`、`test-strategy.md`
 
 ## 下一步
-1. V2：实现 `split_by_scenes()` — 按场景切割视频为多个文件
-2. V2：每个场景提取缩略图
-3. 在 `edit_video.py` 中新增 `detect_scenes` 和 `split_by_scenes` 操作
-4. 在 `edit_video.py` 中新增 `split_by_scenes` 操作
+1. V2 Step 5：场景 + 音频联合分析（结合 `analyze_audio_energy()` 标记高能量场景）
+2. V2 Step 6：AI 辅助场景选择（根据用户意图推荐场景）
 
 ## 待定决策
 - Parser（`modules/parser.py`）保留但已废弃，后续可清理

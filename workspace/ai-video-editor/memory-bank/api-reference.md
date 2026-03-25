@@ -21,6 +21,8 @@ python edit_video.py --operation trim_start --input video.mp4 --output out.mp4 -
 | `convert` | `width`、`height`（整数，像素） | — |
 | `remove_silence` | — | `threshold`（dB，默认 -40） |
 | `remove_static` | — | `threshold`（像素差异均值，默认 5.0）、`min_static_duration`（秒，默认 0.3） |
+| `detect_scenes` | — | `threshold`（敏感度，默认 0.4，越低越敏感）、`min_scene_duration`（秒，默认 1.0） |
+| `split_by_scenes` | — | `threshold`、`min_scene_duration`。`--output` 是目录，不是文件 |
 | `info` | —（不需要 `--output`） | — |
 
 ## 返回值结构

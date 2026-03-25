@@ -3,10 +3,11 @@ analyzer.py - Video analysis module
 
 Shared analysis layer for V2/V3/V4 stages:
   - extract_audio()           Extract audio track
-  - detect_scenes()           Scene-cut detection
-  - extract_thumbnail()       Extract a frame as thumbnail
-  - analyze_audio_energy()    Per-window RMS energy curve
-  - detect_static_segments()  Detect frozen-frame segments
+  - detect_scenes()           Scene-cut detection (frame-difference analysis)
+  - extract_thumbnail()        Extract a frame as thumbnail
+  - analyze_audio_energy()     Per-window RMS energy curve
+  - detect_static_segments()   Detect frozen-frame segments
+  - extract_scene_thumbnails() Extract one thumbnail per scene
 """
 
 import os
@@ -362,3 +363,50 @@ class Analyzer:
                 static_segments.append((round(static_start, 3), round(end_time, 3)))
 
         return static_segments
+
+    # ------------------------------------------------------------------
+    # extract_scene_thumbnails
+    # ------------------------------------------------------------------
+
+    def extract_scene_thumbnails(
+        self,
+        input_video: str,
+        scenes: list[dict],
+        output_dir: Optional[str] = None,
+        width: int = 320,
+    ) -> list[str]:
+        """Extract one thumbnail per detected scene.
+
+        Args:
+            input_video:     Path to the source video.
+            scenes:          List of scene dicts from detect_scenes().
+            output_dir:      Directory to save thumbnails. Defaults to a temp dir.
+            width:           Output image width in pixels (height auto-scaled).
+
+        Returns:
+            List of absolute paths to the saved thumbnail images.
+
+        Raises:
+            AnalyzerError: If extraction fails.
+        """
+        self._require_file(input_video)
+
+        if not scenes:
+            return []
+
+        if output_dir is None:
+            fd, output_dir = tempfile.mkstemp(dir=".", suffix="_thumbs")[0]
+            os.close(fd)
+            output_dir = os.path.dirname(output_dir) or "."
+        else:
+            os.makedirs(output_dir, exist_ok=True)
+
+        paths: list[str] = []
+        for scene in scenes:
+            mid_time = (scene["start"] + scene["end"]) / 2.0
+            filename = f"scene_{scene['index']:03d}.jpg"
+            output_path = os.path.join(output_dir, filename)
+            saved = self.extract_thumbnail(input_video, mid_time, output_path, width)
+            paths.append(saved)
+
+        return paths

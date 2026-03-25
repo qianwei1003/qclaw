@@ -91,6 +91,9 @@ class Executor:
         
         elif operation == "remove_static":
             return self._remove_static(params, input_video, output_video)
+
+        elif operation == "split_by_scenes":
+            return self._split_by_scenes(params, input_video, output_video)
         
         else:
             raise ExecutionError(f"不支持的操作类型: {operation}")
@@ -682,6 +685,74 @@ class Executor:
             return success
 
         return self._trim_segments(keep_segments, input_video, output_video)
+
+    def _split_by_scenes(
+        self,
+        params: Dict[str, Any],
+        input_video: str,
+        output_video: str,
+    ) -> bool:
+        """Split video into scene clips.
+
+        Args:
+            params: Optional keys:
+                - threshold (float): scene-detection sensitivity, default 0.4 (0–1, lower=more sensitive)
+                - min_scene_duration (float): minimum scene length in seconds, default 1.0
+            input_video:  Source video path.
+            output_video: Destination directory path (will be created if missing).
+
+        Returns:
+            True on success.
+
+        Raises:
+            ExecutionError: If detection or any FFmpeg split step fails.
+        """
+        from modules.analyzer import Analyzer, AnalyzerError
+
+        threshold = params.get("threshold", 0.4)
+        min_scene_duration = params.get("min_scene_duration", 1.0)
+
+        # Resolve output directory: output_video is the directory path here
+        output_dir = self._normalize_path(output_video)
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Step 1: detect scenes
+        analyzer = Analyzer(ffmpeg_path=self.ffmpeg_path)
+        try:
+            scenes = analyzer.detect_scenes(
+                input_video,
+                threshold=threshold,
+                min_scene_duration=min_scene_duration,
+            )
+        except AnalyzerError as e:
+            raise ExecutionError(f"Scene detection failed: {e}") from e
+
+        if not scenes:
+            raise ExecutionError("No scenes detected in this video.")
+
+        # Step 2: split each scene into a separate file
+        for scene in scenes:
+            start = scene["start"]
+            duration = scene["duration"]
+            filename = f"scene_{scene['index']:03d}.mp4"
+            scene_path = os.path.join(output_dir, filename)
+
+            cmd = [
+                self.ffmpeg_path, "-y",
+                "-ss", str(start),
+                "-i", input_video,
+                "-t", str(duration),
+                "-c", "copy",
+                scene_path,
+            ]
+
+            success, err = self._run_ffmpeg(cmd)
+            if not success:
+                raise ExecutionError(
+                    f"Failed to extract scene {scene['index']} ({start}s–{start+duration}s): {err}"
+                )
+
+        return True
 
 
 # 测试代码

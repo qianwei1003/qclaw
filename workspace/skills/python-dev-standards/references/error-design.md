@@ -57,7 +57,24 @@ except Exception as e:
 - **已知原因**（如有）
 - **如何修复**（如用户可操作）
 
-## 边界条件的错误处理
+## 函数参数设计原则
+
+**所有参数都必须有默认值，且可被调用方覆盖。**
+
+```python
+# 错误：没有默认值
+def detect_scenes(video_path, threshold):  # ❌ threshold 必须传
+    ...
+
+# 正确：有默认值，可选传
+def detect_scenes(video_path, threshold: float = 27.0):
+    ...
+    return scenes
+```
+
+例外：必填参数（文件路径、操作类型）不需要默认值，但调用方必须传值。
+
+此原则适用于所有函数，包括内部函数。
 
 | 情况 | 处理 |
 |------|------|

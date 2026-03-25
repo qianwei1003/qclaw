@@ -69,6 +69,16 @@ OPERATIONS: dict[str, dict] = {
         "required_params": [],
         "example_params": {"threshold": 0.01, "min_static_duration": 1.0},
     },
+    "detect_scenes": {
+        "description": "Detect scene cuts and return scene list. Does NOT cut video — use split_by_scenes to cut.",
+        "required_params": [],
+        "example_params": {"threshold": 0.4, "min_scene_duration": 1.0},
+    },
+    "split_by_scenes": {
+        "description": "Detect scenes and split video into separate files, one per scene.",
+        "required_params": [],
+        "example_params": {"threshold": 0.4, "min_scene_duration": 1.0},
+    },
     "info": {
         "description": "Get video metadata (duration, resolution, fps, codec).",
         "required_params": [],
@@ -174,10 +184,46 @@ def main() -> int:
         print_result(True, "Video info retrieved", info)
         return 0
 
+    # detect_scenes operation — no output needed, returns scene list
+    if args.operation == "detect_scenes":
+        from modules.analyzer import Analyzer, AnalyzerError
+        analyzer = Analyzer()
+        try:
+            threshold = params.get("threshold", 0.4)
+            min_scene_duration = params.get("min_scene_duration", 1.0)
+            scenes = analyzer.detect_scenes(
+                input_video,
+                threshold=threshold,
+                min_scene_duration=min_scene_duration,
+            )
+            print_result(True, f"Detected {len(scenes)} scenes", {
+                "scenes": scenes,
+                "count": len(scenes),
+            })
+            return 0
+        except AnalyzerError as e:
+            print_result(False, f"Scene detection failed: {e}")
+            return 1
+
     # All other operations require --output
     if not output_video:
         print_result(False, "Missing --output for operation: " + args.operation)
         return 1
+
+    # split_by_scenes: output_video is a directory, skip validation
+    if args.operation == "split_by_scenes":
+        executor = Executor()
+        instruction = {"operation": "split_by_scenes", "params": params}
+        try:
+            success = executor.execute(instruction, input_video, output_video)
+        except ExecutionError as e:
+            print_result(False, f"Split by scenes failed: {e}")
+            return 1
+        if success:
+            print_result(True, f"Video split into scenes in: {output_video}")
+        else:
+            print_result(False, "Split by scenes returned failure")
+        return 0 if success else 1
 
     # Ensure output directory exists
     output_dir = os.path.dirname(output_video)
