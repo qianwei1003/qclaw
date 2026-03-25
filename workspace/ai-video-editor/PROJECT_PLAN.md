@@ -231,6 +231,7 @@ python main.py "删除静音段" input.mp4 output.mp4 --detect-scenes --generate
 | Parser（需求解析） | ✅ 已完成 | 自然语言 → 结构化指令，支持多段截取 |
 | Executor（执行器） | ✅ 已完成 | FFmpeg 封装，含多段截取合并 |
 | Validator（验证器） | ✅ 已完成 | 输出验证，元数据提取 |
+| Analyzer（视频分析） | ✅ 已完成 | extract_audio / detect_scenes / extract_thumbnail / analyze_audio_energy / detect_static_segments |
 | 视频下载 | ✅ 已完成 | yt-dlp |
 
 ---
@@ -248,7 +249,7 @@ python main.py "删除静音段" input.mp4 output.mp4 --detect-scenes --generate
 | 视频合并 | FFmpeg | ✅ 已完成 |
 | 格式转换/分辨率改变 | FFmpeg | ✅ 已完成 |
 | 删除静音段 | FFmpeg silenceremove | ✅ 已完成（FFmpeg 7.x 兼容版） |
-| 删除静止段 | OpenCV 帧分析 | ✅ 已完成（2026-03-24） |
+| 删除静止段 | OpenCV 帧分析 | ✅ 已完成（Analyzer.detect_static_segments） |
 
 ### Parser 支持的操作类型
 
@@ -284,4 +285,4 @@ python main.py "删除静音段" input.mp4 output.mp4 --detect-scenes --generate
 | 2026-03-24 v1.4 | 1.4 | 完成全部 6 个文档（架构/流程/测试/API/错误处理） |
 | 2026-03-24 v1.5 | 1.5 | 完成测试视频生成脚本（含真正静音段测试视频） |
 
-_Last updated: 2026-03-24 22:22_
+| 2026-03-25 v1.6 | 1.6 | 新增 Analyzer 模块（extract_audio/detect_scenes/extract_thumbnail/analyze_audio_energy/detect_static_segments），实现 remove_static，建立 V2/V3/V4 共用分析层 |

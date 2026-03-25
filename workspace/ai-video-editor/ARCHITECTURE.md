@@ -50,11 +50,32 @@
 | Parser（需求解析） | ✅ 已完成 | `modules/parser.py` |
 | Executor（执行器） | ✅ 已完成 | `modules/executor.py` |
 | Validator（验证器） | ✅ 已完成 | `modules/validator.py` |
-| 视频下载 | ✅ 已完成 | yt-dlp 集成 |
+| Analyzer（视频分析） | ✅ 已完成 | `modules/analyzer.py` |
 
 ---
 
-## 📋 Parser 模块详解
+## 📋 Analyzer 模块详解
+
+**`modules/analyzer.py`** — 共用视频分析层，供 V2/V3/V4 复用
+
+### 方法一览
+
+| 方法 | 用途 | 依赖 | 被哪些阶段使用 |
+|------|------|------|--------------|
+| `extract_audio()` | 提取音频轨道（WAV） | FFmpeg | V3 字幕、V4 能量分析 |
+| `detect_scenes()` | 场景切换检测（OpenCV 帧差） | OpenCV | V2 场景分割、V4 精彩片段 |
+| `extract_thumbnail()` | 提取指定时间点缩略图 | FFmpeg | V2 场景预览、V4 封面 |
+| `analyze_audio_energy()` | 逐窗口 RMS 能量曲线 | FFmpeg + NumPy | V4 高潮检测 |
+| `detect_static_segments()` | 检测静止帧段（OpenCV 帧差） | OpenCV | V1 remove_static |
+
+### 依赖
+```
+pip install opencv-python numpy
+```
+
+---
+
+
 
 **`modules/parser.py`** — 自然语言 → 结构化指令
 
@@ -132,7 +153,7 @@
 | 视频合并 | FFmpeg | ✅ 已完成 |
 | 格式转换 | FFmpeg | ✅ 已完成 |
 | 删除静音段 | FFmpeg silenceremove | ✅ 已完成 |
-| 删除静止段 | - | ⏳ Parser 完成，Executor 待实现 |
+| 删除静止段 | OpenCV 帧分析 | ✅ 已完成（Analyzer.detect_static_segments） |
 
 ### 主入口：VideoEditor 类
 

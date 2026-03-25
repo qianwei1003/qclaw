@@ -620,45 +620,68 @@ class Executor:
         return self._trim_segments(keep_segments, input_video, output_video)
     
     def _remove_static(
-        self, 
-        params: Dict[str, Any], 
-        input_video: str, 
-        output_video: str
+        self,
+        params: Dict[str, Any],
+        input_video: str,
+        output_video: str,
     ) -> bool:
+        """Remove static (frozen-frame) segments using OpenCV frame-diff analysis.
+
+        Args:
+            params: Optional keys:
+                - threshold (float): per-pixel diff threshold 0–1, default 0.01
+                - min_static_duration (float): min seconds to count as static, default 1.0
+            input_video:  Source video path.
+            output_video: Destination video path.
         """
-        删除静止/黑屏段
-        
-        使用 FFmpeg 的 blackframe 和 select 滤镜实现
-        """
-        threshold = params.get("threshold", 0.01)  # 帧差异阈值
-        
-        # 方案：使用 select 滤镜 + 反向思维
-        # 保留变化的帧，去除静止帧
-        # 
-        # 这个实现比较复杂，因为 FFmpeg 没有直接的"删除静止帧"滤镜
-        # 我们用 ffmpeg-python 或者更简单的方法：先检测静止段时间，再用 trim 删除
-        
-        # 更简单的方案：使用 setpts=0+PTS 配合其他方式
-        # 这里先用黑屏检测
-        cmd = self._build_command(
-            input_video,
-            output_video,
-            [
-                "-vf", f"blackframe=0:{int(threshold * 100)}",  # 检测黑帧
-                "-f", "null", "-"  # 输出到 null（只是检测）
-            ]
-        )
-        
-        # 先尝试简单的方法：使用 minrate + scene detection
-        # 或者直接用 select 滤镜选择变化的区域
-        
-        # 最简单方案：用这段视频没有黑屏，直接返回原视频
-        # 实际上删除静止段需要复杂的后处理，这里先标记为暂不支持
-        raise ExecutionError(
-            "删除静止段功能正在开发中。"
-            "当前 FFmpeg 需要配合 Python 脚本分析帧差异。"
-            "建议先用 '删除静音段' 功能。"
-        )
+        from modules.analyzer import Analyzer, AnalyzerError
+
+        threshold = params.get("threshold", 0.01)
+        min_static_duration = params.get("min_static_duration", 1.0)
+
+        analyzer = Analyzer(ffmpeg_path=self.ffmpeg_path)
+
+        try:
+            static_segments = analyzer.detect_static_segments(
+                input_video,
+                threshold=threshold,
+                min_static_duration=min_static_duration,
+            )
+        except AnalyzerError as e:
+            raise ExecutionError(f"Static segment detection failed: {e}") from e
+
+        if not static_segments:
+            # No static segments — copy as-is
+            cmd = self._build_command(input_video, output_video, ["-c", "copy"])
+            return self._run_ffmpeg(cmd)[0]
+
+        # Build keep-segments (inverse of static_segments)
+        duration = self.get_video_duration(input_video)
+        if duration is None:
+            raise ExecutionError(f"Cannot read duration: {input_video}")
+
+        keep_segments: list[tuple[float, float]] = []
+        prev_end = 0.0
+        for start, end in sorted(static_segments):
+            if prev_end < start:
+                keep_segments.append((prev_end, start))
+            prev_end = end
+        if prev_end < duration:
+            keep_segments.append((prev_end, duration))
+
+        if not keep_segments:
+            raise ExecutionError("Entire video is static — nothing to keep.")
+
+        if len(keep_segments) == 1:
+            s, e = keep_segments[0]
+            cmd = self._build_command(
+                input_video, output_video,
+                ["-ss", str(s), "-to", str(e), "-c", "copy"],
+            )
+            success, _ = self._run_ffmpeg(cmd)
+            return success
+
+        return self._trim_segments(keep_segments, input_video, output_video)
 
 
 # 测试代码
