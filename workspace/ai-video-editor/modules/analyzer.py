@@ -1,15 +1,15 @@
 """
-analyzer.py - 视频分析模块
+analyzer.py - Video analysis module
 
-提供共用的视频分析能力，供 V2/V3/V4 阶段复用：
-  - extract_audio()        提取音频轨道
-  - detect_scenes()        场景切换检测
-  - extract_thumbnail()    提取帧缩略图
-  - analyze_audio_energy() 音频能量曲线分析
+Shared analysis layer for V2/V3/V4 stages:
+  - extract_audio()           Extract audio track
+  - detect_scenes()           Scene-cut detection
+  - extract_thumbnail()       Extract a frame as thumbnail
+  - analyze_audio_energy()    Per-window RMS energy curve
+  - detect_static_segments()  Detect frozen-frame segments
 """
 
 import os
-import re
 import subprocess
 import tempfile
 from typing import Optional
@@ -43,6 +43,55 @@ class Analyzer:
     def _require_file(self, path: str) -> None:
         if not os.path.exists(path):
             raise AnalyzerError(f"File not found: {path}")
+
+    def _iter_frame_diffs(
+        self,
+        input_video: str,
+    ) -> tuple[float, list[tuple[int, float, float]]]:
+        """Iterate over frames and compute per-frame grayscale diff scores.
+
+        Args:
+            input_video: Path to the source video.
+
+        Returns:
+            (fps, [(frame_idx, timestamp, diff_score), ...])
+            diff_score is mean absolute pixel diff normalised to [0, 1].
+            First frame has diff_score = 0.0 (no previous frame).
+
+        Raises:
+            AnalyzerError: If the video cannot be opened.
+        """
+        cap = cv2.VideoCapture(input_video)
+        if not cap.isOpened():
+            raise AnalyzerError(f"Cannot open video: {input_video}")
+
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        results: list[tuple[int, float, float]] = []
+        prev_gray: Optional[np.ndarray] = None
+        frame_idx = 0
+
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                timestamp = frame_idx / fps
+
+                if prev_gray is not None:
+                    diff = cv2.absdiff(gray, prev_gray)
+                    score = float(diff.mean()) / 255.0
+                else:
+                    score = 0.0
+
+                results.append((frame_idx, timestamp, score))
+                prev_gray = gray
+                frame_idx += 1
+        finally:
+            cap.release()
+
+        return fps, results
 
     # ------------------------------------------------------------------
     # extract_audio
@@ -80,9 +129,9 @@ class Analyzer:
             self.ffmpeg_path,
             "-y",
             "-i", input_video,
-            "-vn",                          # drop video stream
-            "-ar", str(sample_rate),        # sample rate
-            "-ac", str(channels),           # channels
+            "-vn",
+            "-ar", str(sample_rate),
+            "-ac", str(channels),
             "-f", "wav",
             output_audio,
         ]
@@ -105,76 +154,45 @@ class Analyzer:
         threshold: float = 0.4,
         min_scene_duration: float = 1.0,
     ) -> list[dict]:
-        """Detect scene cuts in a video using frame-difference analysis (OpenCV).
+        """Detect scene cuts using frame-difference analysis.
 
         Args:
-            input_video:          Path to the source video.
-            threshold:            Frame-difference threshold (0–1).
-                                  Lower = more sensitive. Default 0.4.
-            min_scene_duration:   Minimum scene length in seconds. Scenes
-                                  shorter than this are merged into the previous.
+            input_video:         Path to the source video.
+            threshold:           Diff score threshold (0–1). Lower = more sensitive.
+            min_scene_duration:  Minimum scene length in seconds.
 
         Returns:
-            List of scene dicts, e.g.:
-            [
-              {"index": 0, "start": 0.0,  "end": 12.3, "duration": 12.3},
-              {"index": 1, "start": 12.3, "end": 25.0, "duration": 12.7},
-              ...
-            ]
+            List of scene dicts:
+            [{"index": 0, "start": 0.0, "end": 12.3, "duration": 12.3}, ...]
 
         Raises:
             AnalyzerError: If the video cannot be opened.
         """
         self._require_file(input_video)
 
-        cap = cv2.VideoCapture(input_video)
-        if not cap.isOpened():
-            raise AnalyzerError(f"Cannot open video: {input_video}")
+        fps, frame_diffs = self._iter_frame_diffs(input_video)
+        if not frame_diffs:
+            return []
 
-        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        total_duration = total_frames / fps
+        total_duration = frame_diffs[-1][1] + (1.0 / fps)
+        cut_times: list[float] = [0.0]
 
-        cut_times: list[float] = [0.0]  # scene start times
-
-        prev_gray: Optional[np.ndarray] = None
-        frame_idx = 0
-
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-            if prev_gray is not None:
-                diff = cv2.absdiff(gray, prev_gray)
-                score = diff.mean() / 255.0
-                if score > threshold:
-                    timestamp = frame_idx / fps
-                    # Enforce minimum scene duration
-                    if timestamp - cut_times[-1] >= min_scene_duration:
-                        cut_times.append(timestamp)
-
-            prev_gray = gray
-            frame_idx += 1
-
-        cap.release()
+        for _, timestamp, score in frame_diffs:
+            if score > threshold:
+                if timestamp - cut_times[-1] >= min_scene_duration:
+                    cut_times.append(timestamp)
 
         cut_times.append(total_duration)
 
-        scenes = []
-        for i in range(len(cut_times) - 1):
-            start = round(cut_times[i], 3)
-            end = round(cut_times[i + 1], 3)
-            scenes.append({
+        return [
+            {
                 "index": i,
-                "start": start,
-                "end": end,
-                "duration": round(end - start, 3),
-            })
-
-        return scenes
+                "start": round(cut_times[i], 3),
+                "end": round(cut_times[i + 1], 3),
+                "duration": round(cut_times[i + 1] - cut_times[i], 3),
+            }
+            for i in range(len(cut_times) - 1)
+        ]
 
     # ------------------------------------------------------------------
     # extract_thumbnail
@@ -192,8 +210,7 @@ class Analyzer:
         Args:
             input_video:  Path to the source video.
             timestamp:    Time in seconds to capture.
-            output_image: Destination path (.jpg/.png).
-                          Defaults to a temp .jpg file.
+            output_image: Destination path (.jpg/.png). Defaults to a temp .jpg.
             width:        Output image width in pixels (height auto-scaled).
 
         Returns:
@@ -235,40 +252,33 @@ class Analyzer:
         self,
         input_video: str,
         window_size: float = 1.0,
+        sample_rate: int = 16000,
     ) -> list[dict]:
         """Compute RMS audio energy per time window.
-
-        Useful for detecting high-energy (exciting) segments in V4.
 
         Args:
             input_video:  Path to the source video.
             window_size:  Analysis window in seconds (default 1.0).
+            sample_rate:  Sample rate for audio decoding (default 16000).
 
         Returns:
-            List of energy dicts, e.g.:
-            [
-              {"start": 0.0,  "end": 1.0,  "energy": 0.032},
-              {"start": 1.0,  "end": 2.0,  "energy": 0.187},
-              ...
-            ]
-            Energy values are normalised to [0, 1].
+            List of energy dicts (energy normalised to [0, 1]):
+            [{"start": 0.0, "end": 1.0, "energy": 0.032}, ...]
 
         Raises:
             AnalyzerError: If audio extraction or analysis fails.
         """
         self._require_file(input_video)
 
-        # Step 1: extract audio to temp wav
-        tmp_wav = self.extract_audio(input_video, sample_rate=16000, channels=1)
+        tmp_wav = self.extract_audio(input_video, sample_rate=sample_rate, channels=1)
 
         try:
-            # Step 2: read wav with ffmpeg → raw PCM via pipe
             cmd = [
                 self.ffmpeg_path,
                 "-y",
                 "-i", tmp_wav,
-                "-f", "s16le",   # signed 16-bit little-endian PCM
-                "-ar", "16000",
+                "-f", "s16le",
+                "-ar", str(sample_rate),
                 "-ac", "1",
                 "pipe:1",
             ]
@@ -276,24 +286,23 @@ class Analyzer:
             if result.returncode != 0:
                 raise AnalyzerError("Failed to decode audio to PCM")
 
-            # Step 3: parse PCM samples
             samples = np.frombuffer(result.stdout, dtype=np.int16).astype(np.float32)
-            samples /= 32768.0  # normalise to [-1, 1]
+            samples /= 32768.0
 
-            sample_rate = 16000
             window_samples = int(window_size * sample_rate)
+            windows: list[dict] = []
 
-            windows = []
             for i in range(0, len(samples), window_samples):
                 chunk = samples[i: i + window_samples]
                 if len(chunk) == 0:
                     continue
                 rms = float(np.sqrt(np.mean(chunk ** 2)))
-                start = i / sample_rate
-                end = (i + len(chunk)) / sample_rate
-                windows.append({"start": round(start, 3), "end": round(end, 3), "energy": rms})
+                windows.append({
+                    "start": round(i / sample_rate, 3),
+                    "end": round((i + len(chunk)) / sample_rate, 3),
+                    "energy": rms,
+                })
 
-            # Step 4: normalise energy to [0, 1]
             if windows:
                 max_energy = max(w["energy"] for w in windows) or 1.0
                 for w in windows:
@@ -306,7 +315,7 @@ class Analyzer:
                 os.remove(tmp_wav)
 
     # ------------------------------------------------------------------
-    # remove_static  (实现 Executor 中的空壳)
+    # detect_static_segments
     # ------------------------------------------------------------------
 
     def detect_static_segments(
@@ -319,66 +328,37 @@ class Analyzer:
 
         Args:
             input_video:          Path to the source video.
-            threshold:            Mean per-pixel diff threshold (0–1).
-                                  Below this = static. Default 0.01.
-            min_static_duration:  Minimum consecutive static time (seconds)
-                                  before a segment is reported.
+            threshold:            Diff score threshold (0–1). Below = static.
+            min_static_duration:  Minimum consecutive static seconds to report.
 
         Returns:
-            List of (start, end) tuples for static segments (in seconds).
+            List of (start, end) tuples for static segments (seconds).
 
         Raises:
             AnalyzerError: If the video cannot be opened.
         """
         self._require_file(input_video)
 
-        cap = cv2.VideoCapture(input_video)
-        if not cap.isOpened():
-            raise AnalyzerError(f"Cannot open video: {input_video}")
-
-        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        fps, frame_diffs = self._iter_frame_diffs(input_video)
         static_segments: list[tuple[float, float]] = []
-
-        prev_gray: Optional[np.ndarray] = None
         static_start: Optional[float] = None
-        frame_idx = 0
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            timestamp = frame_idx / fps
-
-            if prev_gray is not None:
-                diff = cv2.absdiff(gray, prev_gray)
-                score = diff.mean() / 255.0
-
-                if score < threshold:
-                    # Frame is static
-                    if static_start is None:
-                        static_start = (frame_idx - 1) / fps
-                else:
-                    # Frame changed — close any open static segment
-                    if static_start is not None:
-                        duration = timestamp - static_start
-                        if duration >= min_static_duration:
-                            static_segments.append((
-                                round(static_start, 3),
-                                round(timestamp, 3),
-                            ))
-                        static_start = None
-
-            prev_gray = gray
-            frame_idx += 1
+        for frame_idx, timestamp, score in frame_diffs:
+            if score < threshold:
+                if static_start is None:
+                    static_start = max(0.0, timestamp - (1.0 / fps))
+            else:
+                if static_start is not None:
+                    duration = timestamp - static_start
+                    if duration >= min_static_duration:
+                        static_segments.append((round(static_start, 3), round(timestamp, 3)))
+                    static_start = None
 
         # Close segment that runs to end of video
-        if static_start is not None:
-            end_time = frame_idx / fps
+        if static_start is not None and frame_diffs:
+            end_time = frame_diffs[-1][1] + (1.0 / fps)
             duration = end_time - static_start
             if duration >= min_static_duration:
                 static_segments.append((round(static_start, 3), round(end_time, 3)))
 
-        cap.release()
         return static_segments
