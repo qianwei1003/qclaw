@@ -18,7 +18,7 @@ V1 已完成。共用 Analyzer 模块已建立。准备开始 V2。
 - `Validator` — 每次操作后验证输出文件
 
 ## 进行中
-- `memory-bank/` 初始化（本次会话）
+- V2：实现 `split_by_scenes()` — 按场景切割视频为多个文件
 
 ## 未开始
 

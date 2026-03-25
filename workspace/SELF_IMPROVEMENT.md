@@ -30,6 +30,38 @@
 
 ## 已记录改进
 
+### 2026-03-25 Python 代码质量规范缺失
+
+### 问题/不足
+开发了完整的 AI 视频剪辑工具，但代码存在多处硬伤：
+- `_build_command` 的 `-y` 放错位置
+- subprocess 错误信息提取用 `[-3]` 行数猜测
+- `get_video_duration` 正则 `\d{2}` 导致 >59分钟视频崩溃
+- 三个模块各写各的 duration 解析，没有复用
+
+### 原因分析
+1. 现有 `.clinerules` 规范是 TypeScript/React 导向，对 Python 项目不适用
+2. 没有在写代码前触发规范检查
+3. 没有 FFmpeg subprocess 调用的专门规范
+4. 流程规范（memory bank、diff 修改）和代码质量规范是脱节的
+
+### 改进方案
+1. 创建 `python-dev-standards` skill，包含：
+   - FFmpeg subprocess 调用规范
+   - Python 惯用写法（PEP8）
+   - 错误设计规范
+   - 代码审查清单
+   - subprocess 封装模板
+2. 在 AGENTS.md 中添加强制规则：写 Python 代码前必须读取 skill
+3. 触发"重写"而非"修补"的明确信号
+
+### 应用场景
+- 所有 Python 代码开发
+- FFmpeg subprocess 调用
+- 调用 subprocess 的任何工具
+
+---
+
 ### 2026-03-23 忘记计划模式
 
 ### 问题/不足
