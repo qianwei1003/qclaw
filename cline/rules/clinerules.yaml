@@ -1,9 +1,0 @@
-version: "v0.1"
-rules:
-  # 引入其他规则文件
-  includes:
-    - clinerules.i18n.yaml
-    - clinerules.core.yaml
-    - clinerules.workflow.yaml
-title: "开发者业务规则（Cline）"
-description: "面向应用/模块开发者的代码与业务实现规范，便于 Code Review 与团队协作。"

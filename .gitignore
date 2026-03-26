@@ -11,7 +11,7 @@ logs/
 *.log
 
 # Runtime data
-memory/
+# memory/
 qmemory/
 media/
 
