@@ -1,0 +1,157 @@
+# AI Video Editor 配置文件
+# 版本: 1.0
+# 日期: 2026-03-26
+
+# ========================================
+# 视频类型识别配置
+# ========================================
+video_type_detection:
+  sample_duration: 60.0    # 采样时长（秒）
+  
+  # 类型判断阈值
+  thresholds:
+    interview:
+      face_count_min: 2
+      speech_ratio_min: 0.7
+      scene_change_rate_max: 0.15
+      confidence: 0.85
+      
+    speech:
+      face_count: 1
+      speech_ratio_min: 0.8
+      scene_change_rate_max: 0.1
+      confidence: 0.85
+      
+    sports:
+      scene_change_rate_min: 0.25
+      audio_energy_min: 0.5
+      confidence: 0.75
+      
+    movie:
+      scene_change_rate_min: 0.1
+      scene_change_rate_max: 0.25
+      confidence: 0.65
+      
+    tutorial:
+      face_count: 1
+      speech_ratio_min: 0.5
+      speech_ratio_max: 0.9
+      scene_change_rate_max: 0.15
+      confidence: 0.70
+      
+    funny:
+      scene_change_rate_min: 0.2
+      audio_energy_min: 0.6
+      confidence: 0.60
+      
+    vlog:
+      confidence: 0.50
+
+# ========================================
+# 场景评分权重配置
+# ========================================
+scoring_profiles:
+  interview:
+    audio_energy: 0.3
+    speech_density: 0.4
+    face_change: 0.2
+    scene_change: 0.1
+    
+  sports:
+    audio_energy: 0.3
+    visual_intensity: 0.5
+    scene_change: 0.2
+    
+  movie:
+    audio_energy: 0.2
+    visual_intensity: 0.3
+    scene_change: 0.3
+    emotion_score: 0.2
+    
+  funny:
+    audio_energy: 0.4
+    visual_intensity: 0.4
+    scene_change: 0.2
+    
+  tutorial:
+    speech_density: 0.4
+    visual_intensity: 0.3
+    face_presence: 0.3
+    
+  speech:
+    audio_energy: 0.3
+    speech_density: 0.4
+    face_presence: 0.3
+    
+  vlog:
+    scene_change: 0.4
+    visual_intensity: 0.3
+    audio_energy: 0.3
+    
+  default:
+    audio_energy: 0.4
+    visual_intensity: 0.4
+    scene_change: 0.2
+
+# ========================================
+# 安全剪辑点检测配置
+# ========================================
+cut_point_detection:
+  min_silence_duration: 0.3     # 最小静音时长（秒）
+  silence_threshold: 0.1        # 静音阈值（音频能量）
+  audio_window_size: 0.2        # 音频分析窗口大小（秒）
+  
+  # 剪辑点类型权重
+  cut_type_scores:
+    scene_start: 1.0
+    scene_end: 1.0
+    silence: 0.9
+    speech_pause: 0.7
+    action_pause: 0.7
+    speech_mid: 0.0             # 禁止在说话中间剪辑
+
+# ========================================
+# 拼接兼容性检测配置
+# ========================================
+splice_compatibility:
+  volume_diff_error: 15.0       # 音量差异错误阈值（dB）
+  volume_diff_warning: 10.0     # 音量差异警告阈值（dB）
+  visual_diff_threshold: 0.3    # 画面差异阈值
+  
+  # 兼容性分数计算
+  scores:
+    with_issues: 0.3
+    with_warnings: 0.7
+    no_issues: 0.9
+
+# ========================================
+# 场景推荐配置
+# ========================================
+scene_selection:
+  top_n: 5                      # 默认推荐场景数
+  min_score: 0.3                # 最低分数阈值
+  video_type: "auto"            # 默认视频类型（auto=自动检测）
+  with_cut_points: true         # 是否包含剪辑点建议
+
+# ========================================
+# 人脸检测配置
+# ========================================
+face_detection:
+  sample_frames: 5              # 采样帧数
+  cascade_file: "haarcascade_frontalface_default.xml"
+  scale_factor: 1.3
+  min_neighbors: 5
+
+# ========================================
+# 场景检测配置
+# ========================================
+scene_detection:
+  threshold: 0.4                # 场景检测敏感度（越低越敏感）
+  min_scene_duration: 1.0       # 最小场景时长（秒）
+
+# ========================================
+# 音频分析配置
+# ========================================
+audio_analysis:
+  window_size: 1.0              # 能量分析窗口大小（秒）
+  energy_threshold: 0.2         # 说话检测阈值

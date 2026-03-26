@@ -18,15 +18,32 @@ from typing import Optional
 
 import cv2
 import numpy as np
+import yaml
 
 
 class AnalyzerError(Exception):
     pass
 
 
+# Default config path
+DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+
+
+def load_config(config_path: str = None) -> dict:
+    """Load configuration from YAML file."""
+    if config_path is None:
+        config_path = DEFAULT_CONFIG_PATH
+    
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    return {}
+
+
 class Analyzer:
-    def __init__(self, ffmpeg_path: str = "ffmpeg"):
+    def __init__(self, ffmpeg_path: str = "ffmpeg", config_path: str = None):
         self.ffmpeg_path = ffmpeg_path
+        self.config = load_config(config_path)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -724,88 +741,71 @@ class Analyzer:
         return max(face_counts) if face_counts else 0
 
     def _classify_video_type(self, features: dict) -> tuple[str, float]:
-        """Classify video type based on features."""
+        """Classify video type based on features using config."""
         scene_rate = features["scene_change_rate"]
         face_count = features["face_count"]
         speech_ratio = features["speech_ratio"]
         audio_energy = features["avg_audio_energy"]
 
+        # Get thresholds from config
+        thresholds = self.config.get("video_type_detection", {}).get("thresholds", {})
+
         # Interview: 2+ faces, high speech ratio, low scene change
-        if face_count >= 2 and speech_ratio > 0.7 and scene_rate < 0.15:
-            return "interview", 0.85
+        t = thresholds.get("interview", {})
+        if (face_count >= t.get("face_count_min", 2) and 
+            speech_ratio > t.get("speech_ratio_min", 0.7) and 
+            scene_rate < t.get("scene_change_rate_max", 0.15)):
+            return "interview", t.get("confidence", 0.85)
 
         # Speech: 1 face, high speech ratio, very low scene change
-        if face_count == 1 and speech_ratio > 0.8 and scene_rate < 0.1:
-            return "speech", 0.85
+        t = thresholds.get("speech", {})
+        if (face_count == t.get("face_count", 1) and 
+            speech_ratio > t.get("speech_ratio_min", 0.8) and 
+            scene_rate < t.get("scene_change_rate_max", 0.1)):
+            return "speech", t.get("confidence", 0.85)
 
         # Sports: high scene change rate, high audio energy
-        if scene_rate > 0.25 and audio_energy > 0.5:
-            return "sports", 0.75
+        t = thresholds.get("sports", {})
+        if (scene_rate > t.get("scene_change_rate_min", 0.25) and 
+            audio_energy > t.get("audio_energy_min", 0.5)):
+            return "sports", t.get("confidence", 0.75)
 
         # Movie: moderate scene change
-        if 0.1 < scene_rate < 0.25:
-            return "movie", 0.65
+        t = thresholds.get("movie", {})
+        if (scene_rate > t.get("scene_change_rate_min", 0.1) and 
+            scene_rate < t.get("scene_change_rate_max", 0.25)):
+            return "movie", t.get("confidence", 0.65)
 
         # Tutorial: 1 face, moderate speech
-        if face_count == 1 and 0.5 < speech_ratio < 0.9 and scene_rate < 0.15:
-            return "tutorial", 0.70
+        t = thresholds.get("tutorial", {})
+        if (face_count == t.get("face_count", 1) and 
+            speech_ratio > t.get("speech_ratio_min", 0.5) and 
+            speech_ratio < t.get("speech_ratio_max", 0.9) and 
+            scene_rate < t.get("scene_change_rate_max", 0.15)):
+            return "tutorial", t.get("confidence", 0.70)
 
         # Funny: high scene change + high audio energy
-        if scene_rate > 0.2 and audio_energy > 0.6:
-            return "funny", 0.60
+        t = thresholds.get("funny", {})
+        if (scene_rate > t.get("scene_change_rate_min", 0.2) and 
+            audio_energy > t.get("audio_energy_min", 0.6)):
+            return "funny", t.get("confidence", 0.60)
 
         # Default to vlog
-        return "vlog", 0.50
+        t = thresholds.get("vlog", {})
+        return "vlog", t.get("confidence", 0.50)
 
     # ------------------------------------------------------------------
     # score_scene
     # ------------------------------------------------------------------
 
-    # Scoring profiles for different video types
-    SCORING_PROFILES = {
-        "interview": {
-            "audio_energy": 0.3,
-            "speech_density": 0.4,
-            "face_change": 0.2,
-            "scene_change": 0.1,
-        },
-        "sports": {
-            "audio_energy": 0.3,
-            "visual_intensity": 0.5,
-            "scene_change": 0.2,
-        },
-        "movie": {
-            "audio_energy": 0.2,
-            "visual_intensity": 0.3,
-            "scene_change": 0.3,
-            "emotion_score": 0.2,
-        },
-        "funny": {
+    def _get_scoring_profile(self, video_type: str) -> dict:
+        """Get scoring profile from config or use defaults."""
+        profiles = self.config.get("scoring_profiles", {})
+        return profiles.get(video_type, profiles.get("default", {
             "audio_energy": 0.4,
             "visual_intensity": 0.4,
             "scene_change": 0.2,
-        },
-        "tutorial": {
-            "speech_density": 0.4,
-            "visual_intensity": 0.3,
-            "face_presence": 0.3,
-        },
-        "speech": {
-            "audio_energy": 0.3,
-            "speech_density": 0.4,
-            "face_presence": 0.3,
-        },
-        "vlog": {
-            "scene_change": 0.4,
-            "visual_intensity": 0.3,
-            "audio_energy": 0.3,
-        },
-        "default": {
-            "audio_energy": 0.4,
-            "visual_intensity": 0.4,
-            "scene_change": 0.2,
-        },
-    }
+        }))
 
     def score_scene(
         self,
@@ -849,8 +849,8 @@ class Analyzer:
         # 4. Scene change (already have this from detect_scenes)
         metrics["scene_change"] = 1.0 / max(scene["duration"], 1.0)  # Normalized
 
-        # Get scoring profile
-        profile = self.SCORING_PROFILES.get(video_type, self.SCORING_PROFILES["default"])
+        # Get scoring profile from config
+        profile = self._get_scoring_profile(video_type)
 
         # Calculate weighted score
         score = 0.0
