@@ -42,25 +42,26 @@
 - [x] 创建 Python 封装脚本
 - [x] 添加参数配置（静音阈值、保留时长等）
 
-### 第二阶段：场景分割
+### 第二阶段：场景分割 ✅ 已完成
 
 **目标：** 实现场景自动检测和分割
 
 **功能：**
-- 检测视频中的场景变化（切换镜头）
-- 自动在场景变化处分割视频
-- 生成每个场景的缩略图
+- ✅ 检测视频中的场景变化（切换镜头）
+- ✅ 自动在场景变化处分割视频
+- ✅ 生成每个场景的缩略图
+- ✅ 场景+音频联合分析
 
 **验收标准：**
-- [ ] 能够检测场景变化
-- [ ] 自动分割成多个片段
-- [ ] 生成场景列表和时间码
+- [x] 能够检测场景变化
+- [x] 自动分割成多个片段
+- [x] 生成场景列表和时间码
 
 **具体任务：**
-1. 安装 PySceneDetect
-2. 测试场景检测功能
-3. 整合到主脚本中
-4. 添加场景预览功能
+- [x] 实现 detect_scenes（OpenCV 帧差分析）
+- [x] 实现 split_by_scenes 场景分割
+- [x] 添加场景预览功能（extract_scene_thumbnails）
+- [x] 场景+音频联合分析（analyze_content_density）
 
 ### 第三阶段：自动字幕
 
@@ -287,3 +288,4 @@ python main.py "删除静音段" input.mp4 output.mp4 --detect-scenes --generate
 
 | 2026-03-25 v1.6 | 1.6 | 新增 Analyzer 模块（extract_audio/detect_scenes/extract_thumbnail/analyze_audio_energy/detect_static_segments），实现 remove_static，建立 V2/V3/V4 共用分析层 |
 | 2026-03-26 v1.7 | 1.7 | V1 阶段完成验收：测试通过（删除前5秒、删除静音段、静止段检测） |
+| 2026-03-26 v2.0 | 2.0 | V2 阶段完成：detect_scenes、split_by_scenes、analyze_content_density |
