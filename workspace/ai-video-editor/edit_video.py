@@ -131,6 +131,26 @@ OPERATIONS: dict[str, dict] = {
             "merge": False,
         },
     },
+    "transcribe": {
+        "description": "Transcribe audio to text using Whisper.",
+        "required_params": [],
+        "example_params": {"language": "zh", "model": "base"},
+    },
+    "generate_srt": {
+        "description": "Generate SRT subtitle file from video.",
+        "required_params": [],
+        "example_params": {},
+    },
+    "burn_subtitle": {
+        "description": "Burn subtitles into video using FFmpeg.",
+        "required_params": [],
+        "example_params": {"srt_file": "video.srt"},
+    },
+    "auto_subtitle": {
+        "description": "One-click auto subtitle: transcribe + generate SRT + burn into video.",
+        "required_params": [],
+        "example_params": {"language": "zh", "model": "base"},
+    },
 }
 
 
@@ -405,6 +425,56 @@ def main() -> int:
             return 0
         except ExecutionError as e:
             print_result(False, f"Scene export failed: {e}")
+            return 1
+
+    # transcribe operation — speech to text
+    if args.operation == "transcribe":
+        from modules.analyzer import Analyzer, AnalyzerError
+        analyzer = Analyzer()
+        try:
+            segments = analyzer.transcribe(
+                input_video,
+                language=params.get("language"),
+                model=params.get("model"),
+            )
+            print_result(
+                True,
+                f"Transcribed {len(segments)} segments",
+                {
+                    "segments": segments,
+                    "count": len(segments),
+                    "language": params.get("language", "auto"),
+                },
+            )
+            return 0
+        except AnalyzerError as e:
+            print_result(False, f"Transcription failed: {e}")
+            return 1
+
+    # generate_srt operation — generate subtitle file
+    if args.operation == "generate_srt":
+        from modules.analyzer import Analyzer, AnalyzerError
+        analyzer = Analyzer()
+        try:
+            # Auto-generate output filename if not specified
+            if not output_video:
+                base_name = os.path.splitext(input_video)[0]
+                output_video = base_name + ".srt"
+            
+            # Transcribe
+            segments = analyzer.transcribe(input_video)
+            
+            # Generate SRT
+            srt_path = analyzer.generate_srt(segments, output_video)
+            
+            print_result(
+                True,
+                f"SRT file generated: {os.path.basename(srt_path)}",
+                {"srt_file": srt_path, "segment_count": len(segments)},
+            )
+            return 0
+        except AnalyzerError as e:
+            print_result(False, f"SRT generation failed: {e}")
             return 1
 
     # All other operations require --output

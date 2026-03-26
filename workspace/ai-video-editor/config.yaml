@@ -155,3 +155,23 @@ scene_detection:
 audio_analysis:
   window_size: 1.0              # 能量分析窗口大小（秒）
   energy_threshold: 0.2         # 说话检测阈值
+
+# ========================================
+# 字幕配置 (V3)
+# ========================================
+subtitle:
+  # 语音识别
+  language: "zh"                # 语言代码：zh=中文，en=英文
+  model: "base"                 # Whisper模型：tiny/base/small/medium/large
+  
+  # 字幕样式
+  font: "微软雅黑"               # 字体名称
+  size: 24                      # 字体大小
+  color: "white"                # 字体颜色：white/yellow/red/blue/green
+  position: "bottom"            # 位置：bottom/top/center
+  background: false             # 是否添加背景色块
+  
+  # 时间轴优化
+  max_line_length: 20           # 每行最大字数，超过自动换行
+  min_duration: 1.0             # 最短显示时长（秒）
+  max_duration: 7.0             # 最长显示时长（秒）

@@ -1112,3 +1112,164 @@ class Analyzer:
             "total_scenes": len(scenes),
             "recommended": recommended,
         }
+
+    # ------------------------------------------------------------------
+    # Subtitle / Transcription (V3)
+    # ------------------------------------------------------------------
+
+    def transcribe(
+        self,
+        input_video: str,
+        language: str = None,
+        model: str = None,
+    ) -> list[dict]:
+        """Transcribe audio to text with timestamps using Whisper.
+
+        Args:
+            input_video: Path to the source video.
+            language: Language code (e.g., 'zh', 'en'). Auto-detect if None.
+            model: Whisper model size (tiny/base/small/medium/large).
+
+        Returns:
+            List of segments with start, end, text.
+        """
+        try:
+            import whisper
+        except ImportError:
+            raise AnalyzerError("Whisper not installed. Run: pip install openai-whisper")
+
+        self._require_file(input_video)
+
+        # Get config values
+        subtitle_config = self.config.get("subtitle", {})
+        language = language or subtitle_config.get("language", "zh")
+        model = model or subtitle_config.get("model", "base")
+
+        # Load model (will download on first use)
+        try:
+            model_obj = whisper.load_model(model)
+        except Exception as e:
+            raise AnalyzerError(f"Failed to load Whisper model '{model}': {e}")
+
+        # Transcribe
+        result = model_obj.transcribe(input_video, language=language)
+
+        # Format output
+        segments = []
+        for seg in result["segments"]:
+            segments.append({
+                "start": round(seg["start"], 3),
+                "end": round(seg["end"], 3),
+                "text": seg["text"].strip(),
+            })
+
+        return segments
+
+    def generate_srt(
+        self,
+        transcription: list[dict],
+        output_path: str,
+    ) -> str:
+        """Generate SRT subtitle file from transcription.
+
+        Args:
+            transcription: Output from transcribe().
+            output_path: Path for the SRT file.
+
+        Returns:
+            Path to the generated SRT file.
+        """
+        def format_time(seconds: float) -> str:
+            """Convert seconds to SRT time format: HH:MM:SS,mmm"""
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            secs = int(seconds % 60)
+            millis = int((seconds % 1) * 1000)
+            return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+        # Get config for line length
+        subtitle_config = self.config.get("subtitle", {})
+        max_line_length = subtitle_config.get("max_line_length", 20)
+
+        srt_lines = []
+        for i, seg in enumerate(transcription, 1):
+            text = seg["text"]
+
+            # Auto-wrap long lines
+            if len(text) > max_line_length:
+                # Simple wrap: split at max_line_length
+                words = text
+                lines = []
+                while len(words) > max_line_length:
+                    # Find a good break point (prefer space)
+                    break_point = max_line_length
+                    while break_point > 0 and words[break_point] != ' ':
+                        break_point -= 1
+                    if break_point == 0:
+                        break_point = max_line_length
+                    lines.append(words[:break_point].strip())
+                    words = words[break_point:].strip()
+                if words:
+                    lines.append(words)
+                text = '\n'.join(lines)
+
+            srt_lines.append(str(i))
+            srt_lines.append(f"{format_time(seg['start'])} --> {format_time(seg['end'])}")
+            srt_lines.append(text)
+            srt_lines.append("")  # Empty line between entries
+
+        # Write to file
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(srt_lines))
+
+        return output_path
+
+    def format_subtitle_style(self, style_config: dict = None) -> str:
+        """Format subtitle style for FFmpeg drawtext filter.
+
+        Args:
+            style_config: Style configuration dict.
+
+        Returns:
+            FFmpeg drawtext style string.
+        """
+        # Get config
+        subtitle_config = self.config.get("subtitle", {})
+
+        if style_config is None:
+            style_config = {}
+
+        font = style_config.get("font") or subtitle_config.get("font", "微软雅黑")
+        size = style_config.get("size") or subtitle_config.get("size", 24)
+        color = style_config.get("color") or subtitle_config.get("color", "white")
+        position = style_config.get("position") or subtitle_config.get("position", "bottom")
+        background = style_config.get("background") or subtitle_config.get("background", False)
+
+        # Color mapping
+        color_map = {
+            "white": "white",
+            "black": "black",
+            "yellow": "yellow",
+            "red": "red",
+            "blue": "blue",
+            "green": "green",
+        }
+        color = color_map.get(color.lower(), "white")
+
+        # Position
+        if position == "bottom":
+            y_pos = "h-text_h-30"
+        elif position == "top":
+            y_pos = "30"
+        elif position == "center":
+            y_pos = "(h-text_h)/2"
+        else:
+            y_pos = "h-text_h-30"
+
+        # Build style string
+        style = f"fontfile={font}:fontsize={size}:fontcolor={color}:x=(w-text_w)/2:y={y_pos}"
+
+        if background:
+            style += ":box=1:boxcolor=black@0.5"
+
+        return style
