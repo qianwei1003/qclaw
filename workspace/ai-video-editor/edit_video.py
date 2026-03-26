@@ -477,6 +477,85 @@ def main() -> int:
             print_result(False, f"SRT generation failed: {e}")
             return 1
 
+    # burn_subtitle operation — burn subtitles into video
+    if args.operation == "burn_subtitle":
+        if not output_video:
+            # Auto-generate output filename
+            base_name = os.path.splitext(input_video)[0]
+            output_video = base_name + "_subtitled.mp4"
+        
+        from modules.executor import Executor, ExecutionError
+        executor = Executor()
+        try:
+            srt_file = params.get("srt_file")
+            if not srt_file:
+                # Auto-generate SRT filename
+                base_name = os.path.splitext(input_video)[0]
+                srt_file = base_name + ".srt"
+            
+            success = executor.burn_subtitle(
+                {"srt_file": srt_file, "style": params.get("style", {})},
+                input_video,
+                output_video,
+            )
+            if success:
+                print_result(
+                    True,
+                    f"Subtitles burned: {os.path.basename(output_video)}",
+                    {"output_video": output_video, "srt_file": srt_file},
+                )
+            return 0 if success else 1
+        except ExecutionError as e:
+            print_result(False, f"Subtitle burn failed: {e}")
+            return 1
+
+    # auto_subtitle operation — one-click subtitle
+    if args.operation == "auto_subtitle":
+        if not output_video:
+            # Auto-generate output filename
+            base_name = os.path.splitext(input_video)[0]
+            output_video = base_name + "_subtitled.mp4"
+        
+        from modules.analyzer import Analyzer, AnalyzerError
+        from modules.executor import Executor, ExecutionError
+        
+        try:
+            # Step 1: Transcribe
+            analyzer = Analyzer()
+            segments = analyzer.transcribe(
+                input_video,
+                language=params.get("language"),
+                model=params.get("model"),
+            )
+            
+            # Step 2: Generate SRT
+            base_name = os.path.splitext(input_video)[0]
+            srt_file = base_name + ".srt"
+            srt_path = analyzer.generate_srt(segments, srt_file)
+            
+            # Step 3: Burn subtitle
+            executor = Executor()
+            success = executor.burn_subtitle(
+                {"srt_file": srt_path, "style": params.get("style", {})},
+                input_video,
+                output_video,
+            )
+            
+            if success:
+                print_result(
+                    True,
+                    f"Auto subtitle complete: {os.path.basename(output_video)}",
+                    {
+                        "srt_file": srt_path,
+                        "output_video": output_video,
+                        "segment_count": len(segments),
+                    },
+                )
+            return 0 if success else 1
+        except (AnalyzerError, ExecutionError) as e:
+            print_result(False, f"Auto subtitle failed: {e}")
+            return 1
+
     # All other operations require --output
     if not output_video:
         print_result(False, "Missing --output for operation: " + args.operation)

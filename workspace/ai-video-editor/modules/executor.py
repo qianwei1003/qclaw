@@ -749,6 +749,55 @@ class Executor:
 
         return True
 
+    def burn_subtitle(
+        self,
+        params: Dict[str, Any],
+        input_video: str,
+        output_video: str,
+    ) -> bool:
+        """Burn subtitles into video using FFmpeg.
+
+        Args:
+            params: {
+                "srt_file": str,  # Path to SRT file
+                "style": dict,    # Optional style config
+            }
+            input_video: Source video path.
+            output_video: Output video path with subtitles.
+
+        Returns:
+            True on success.
+
+        Raises:
+            ExecutionError: If FFmpeg fails.
+        """
+        from modules.analyzer import Analyzer
+
+        srt_file = params.get("srt_file")
+        if not srt_file or not os.path.exists(srt_file):
+            raise ExecutionError(f"SRT file not found: {srt_file}")
+
+        # Get style from params or use default
+        style_config = params.get("style", {})
+        analyzer = Analyzer(ffmpeg_path=self.ffmpeg_path)
+        style_str = analyzer.format_subtitle_style(style_config)
+
+        # Build FFmpeg command with subtitles filter
+        # Use subtitles filter with force_style for customization
+        cmd = [
+            self.ffmpeg_path, "-y",
+            "-i", input_video,
+            "-vf", f"subtitles={srt_file.replace(':', '\\:')}:{style_str}",
+            "-c:a", "copy",  # Copy audio without re-encoding
+            output_video,
+        ]
+
+        success, err = self._run_ffmpeg(cmd)
+        if not success:
+            raise ExecutionError(f"Failed to burn subtitles: {err}")
+
+        return True
+
 
 # 测试代码
 if __name__ == "__main__":
