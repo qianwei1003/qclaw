@@ -95,6 +95,42 @@ OPERATIONS: dict[str, dict] = {
             "content_threshold": 0.3,
         },
     },
+    "detect_type": {
+        "description": "Detect video type (interview/sports/movie/speech/tutorial/vlog/funny) based on visual and audio features.",
+        "required_params": [],
+        "example_params": {"sample_duration": 60.0},
+    },
+    "select_scenes": {
+        "description": "Select and recommend best scenes from video based on multi-dimensional scoring.",
+        "required_params": [],
+        "example_params": {
+            "top_n": 5,
+            "min_score": 0.3,
+            "video_type": "auto",
+            "with_cut_points": True,
+        },
+    },
+    "find_cuts": {
+        "description": "Find safe cut points within a time range (avoiding speech mid-sentence).",
+        "required_params": [],
+        "example_params": {"start": 0.0, "end": 60.0, "min_silence_duration": 0.3},
+    },
+    "check_splice": {
+        "description": "Check if two scenes can be spliced together smoothly.",
+        "required_params": [],
+        "example_params": {
+            "scene1": {"start": 0.0, "end": 30.0},
+            "scene2": {"start": 60.0, "end": 90.0},
+        },
+    },
+    "export_scenes": {
+        "description": "Export selected scenes to separate files or merge into one.",
+        "required_params": ["scenes"],
+        "example_params": {
+            "scenes": [{"start": 0.0, "end": 30.0}, {"start": 60.0, "end": 90.0}],
+            "merge": False,
+        },
+    },
 }
 
 
@@ -241,6 +277,134 @@ def main() -> int:
             return 0
         except AnalyzerError as e:
             print_result(False, f"Content analysis failed: {e}")
+            return 1
+
+    # detect_type operation — detect video type
+    if args.operation == "detect_type":
+        from modules.analyzer import Analyzer, AnalyzerError
+        analyzer = Analyzer()
+        try:
+            result = analyzer.detect_video_type(
+                input_video,
+                sample_duration=params.get("sample_duration", 60.0),
+            )
+            print_result(
+                True,
+                f"Video type: {result['type']} (confidence: {result['confidence']:.0%})",
+                result,
+            )
+            return 0
+        except AnalyzerError as e:
+            print_result(False, f"Video type detection failed: {e}")
+            return 1
+
+    # select_scenes operation — recommend best scenes
+    if args.operation == "select_scenes":
+        from modules.analyzer import Analyzer, AnalyzerError
+        analyzer = Analyzer()
+        try:
+            result = analyzer.select_scenes(
+                input_video,
+                top_n=params.get("top_n", 5),
+                min_score=params.get("min_score", 0.3),
+                video_type=params.get("video_type", "auto"),
+                with_cut_points=params.get("with_cut_points", True),
+            )
+            count = len(result["recommended"])
+            print_result(
+                True,
+                f"Recommended {count} scenes from {result['total_scenes']} (type: {result['video_type']})",
+                result,
+            )
+            return 0
+        except AnalyzerError as e:
+            print_result(False, f"Scene selection failed: {e}")
+            return 1
+
+    # find_cuts operation — find safe cut points
+    if args.operation == "find_cuts":
+        from modules.analyzer import Analyzer, AnalyzerError
+        analyzer = Analyzer()
+        try:
+            result = analyzer.find_safe_cut_points(
+                input_video,
+                start=params.get("start", 0.0),
+                end=params.get("end", 60.0),
+                min_silence_duration=params.get("min_silence_duration", 0.3),
+            )
+            safe_count = len([p for p in result if p["safe"]])
+            print_result(
+                True,
+                f"Found {len(result)} cut points ({safe_count} safe)",
+                {"cut_points": result, "count": len(result)},
+            )
+            return 0
+        except AnalyzerError as e:
+            print_result(False, f"Cut point detection failed: {e}")
+            return 1
+
+    # check_splice operation — check splice compatibility
+    if args.operation == "check_splice":
+        from modules.analyzer import Analyzer, AnalyzerError
+        analyzer = Analyzer()
+        try:
+            scene1 = params.get("scene1", {"start": 0.0, "end": 30.0})
+            scene2 = params.get("scene2", {"start": 60.0, "end": 90.0})
+            result = analyzer.check_splice_compatibility(input_video, scene1, scene2)
+            status = "compatible" if result["compatible"] else "incompatible"
+            print_result(
+                True,
+                f"Scenes are {status} (score: {result['score']:.2f})",
+                result,
+            )
+            return 0
+        except AnalyzerError as e:
+            print_result(False, f"Splice check failed: {e}")
+            return 1
+
+    # export_scenes operation — export selected scenes
+    if args.operation == "export_scenes":
+        if not output_video:
+            print_result(False, "Missing --output for export_scenes")
+            return 1
+        
+        from modules.executor import Executor, ExecutionError
+        executor = Executor()
+        try:
+            scenes = params.get("scenes", [])
+            merge = params.get("merge", False)
+            
+            # Export each scene
+            output_dir = os.path.dirname(output_video) if not merge else output_video
+            if merge:
+                os.makedirs(os.path.dirname(output_video), exist_ok=True)
+            else:
+                os.makedirs(output_dir, exist_ok=True)
+            
+            exported_files = []
+            for i, scene in enumerate(scenes):
+                if merge and i == 0:
+                    # First scene: use output_video directly
+                    scene_output = output_video
+                else:
+                    scene_output = os.path.join(output_dir, f"scene_{i:03d}.mp4")
+                
+                success = executor.execute(
+                    {"operation": "trim_range", "params": scene},
+                    input_video,
+                    scene_output,
+                )
+                if success:
+                    exported_files.append(scene_output)
+            
+            print_result(
+                True,
+                f"Exported {len(exported_files)} scenes",
+                {"exported_files": exported_files, "count": len(exported_files)},
+            )
+            return 0
+        except ExecutionError as e:
+            print_result(False, f"Scene export failed: {e}")
             return 1
 
     # All other operations require --output

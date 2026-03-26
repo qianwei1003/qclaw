@@ -604,3 +604,511 @@ class Analyzer:
                 "content_duration": round(content_duration, 3),
             },
         }
+
+    # ------------------------------------------------------------------
+    # detect_video_type
+    # ------------------------------------------------------------------
+
+    def detect_video_type(
+        self,
+        input_video: str,
+        sample_duration: float = 60.0,
+    ) -> dict:
+        """Detect video type based on visual and audio features.
+
+        Args:
+            input_video: Path to the source video.
+            sample_duration: Duration (seconds) to sample for analysis.
+
+        Returns:
+            {
+                "type": "interview" | "speech" | "sports" | "movie" | "funny" | "tutorial" | "vlog" | "unknown",
+                "confidence": float (0-1),
+                "features": {
+                    "scene_change_rate": float,    # Scene changes per second
+                    "face_count": int,              # Number of faces detected (sampled)
+                    "speech_ratio": float,          # Ratio of time with audio energy
+                    "avg_audio_energy": float,      # Average audio energy
+                }
+            }
+        """
+        self._require_file(input_video)
+
+        # Get video duration
+        duration = self._get_duration(input_video)
+        sample_end = min(sample_duration, duration)
+
+        # 1. Scene change rate
+        scenes = self.detect_scenes(input_video, threshold=0.4, min_scene_duration=1.0)
+        sample_scenes = [s for s in scenes if s["start"] < sample_end]
+        scene_change_rate = len(sample_scenes) / sample_end if sample_end > 0 else 0.0
+
+        # 2. Audio analysis
+        audio_energy = self.analyze_audio_energy(input_video, window_size=1.0)
+        sample_energy = [e for e in audio_energy if e["start"] < sample_end]
+        
+        if sample_energy:
+            avg_energy = sum(e["energy"] for e in sample_energy) / len(sample_energy)
+            # Speech ratio: windows with energy > 0.2
+            speech_ratio = len([e for e in sample_energy if e["energy"] > 0.2]) / len(sample_energy)
+        else:
+            avg_energy = 0.0
+            speech_ratio = 0.0
+
+        # 3. Face detection (sample a few frames)
+        face_count = self._detect_face_count(input_video, sample_end)
+
+        # Build features
+        features = {
+            "scene_change_rate": round(scene_change_rate, 4),
+            "face_count": face_count,
+            "speech_ratio": round(speech_ratio, 4),
+            "avg_audio_energy": round(avg_energy, 4),
+        }
+
+        # Determine video type
+        video_type, confidence = self._classify_video_type(features)
+
+        return {
+            "type": video_type,
+            "confidence": confidence,
+            "features": features,
+        }
+
+    def _get_duration(self, input_video: str) -> float:
+        """Get video duration using ffprobe."""
+        cmd = [
+            self.ffmpeg_path.replace("ffmpeg", "ffprobe"),
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            input_video,
+        ]
+        result = self._run(cmd, timeout=30)
+        if result.returncode == 0 and result.stdout.strip():
+            return float(result.stdout.strip())
+        return 0.0
+
+    def _detect_face_count(self, input_video: str, sample_duration: float) -> int:
+        """Detect number of faces in sampled frames."""
+        cap = cv2.VideoCapture(input_video)
+        if not cap.isOpened():
+            return 0
+
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        total_frames = int(sample_duration * fps)
+        
+        # Sample 5 frames evenly
+        sample_frames = [
+            int(i * total_frames / 6) for i in range(1, 6)
+        ]
+
+        face_counts = []
+        face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        )
+
+        for frame_idx in sample_frames:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+            if not ret:
+                continue
+
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+            face_counts.append(len(faces))
+
+        cap.release()
+
+        # Return max face count detected
+        return max(face_counts) if face_counts else 0
+
+    def _classify_video_type(self, features: dict) -> tuple[str, float]:
+        """Classify video type based on features."""
+        scene_rate = features["scene_change_rate"]
+        face_count = features["face_count"]
+        speech_ratio = features["speech_ratio"]
+        audio_energy = features["avg_audio_energy"]
+
+        # Interview: 2+ faces, high speech ratio, low scene change
+        if face_count >= 2 and speech_ratio > 0.7 and scene_rate < 0.15:
+            return "interview", 0.85
+
+        # Speech: 1 face, high speech ratio, very low scene change
+        if face_count == 1 and speech_ratio > 0.8 and scene_rate < 0.1:
+            return "speech", 0.85
+
+        # Sports: high scene change rate, high audio energy
+        if scene_rate > 0.25 and audio_energy > 0.5:
+            return "sports", 0.75
+
+        # Movie: moderate scene change
+        if 0.1 < scene_rate < 0.25:
+            return "movie", 0.65
+
+        # Tutorial: 1 face, moderate speech
+        if face_count == 1 and 0.5 < speech_ratio < 0.9 and scene_rate < 0.15:
+            return "tutorial", 0.70
+
+        # Funny: high scene change + high audio energy
+        if scene_rate > 0.2 and audio_energy > 0.6:
+            return "funny", 0.60
+
+        # Default to vlog
+        return "vlog", 0.50
+
+    # ------------------------------------------------------------------
+    # score_scene
+    # ------------------------------------------------------------------
+
+    # Scoring profiles for different video types
+    SCORING_PROFILES = {
+        "interview": {
+            "audio_energy": 0.3,
+            "speech_density": 0.4,
+            "face_change": 0.2,
+            "scene_change": 0.1,
+        },
+        "sports": {
+            "audio_energy": 0.3,
+            "visual_intensity": 0.5,
+            "scene_change": 0.2,
+        },
+        "movie": {
+            "audio_energy": 0.2,
+            "visual_intensity": 0.3,
+            "scene_change": 0.3,
+            "emotion_score": 0.2,
+        },
+        "funny": {
+            "audio_energy": 0.4,
+            "visual_intensity": 0.4,
+            "scene_change": 0.2,
+        },
+        "tutorial": {
+            "speech_density": 0.4,
+            "visual_intensity": 0.3,
+            "face_presence": 0.3,
+        },
+        "speech": {
+            "audio_energy": 0.3,
+            "speech_density": 0.4,
+            "face_presence": 0.3,
+        },
+        "vlog": {
+            "scene_change": 0.4,
+            "visual_intensity": 0.3,
+            "audio_energy": 0.3,
+        },
+        "default": {
+            "audio_energy": 0.4,
+            "visual_intensity": 0.4,
+            "scene_change": 0.2,
+        },
+    }
+
+    def score_scene(
+        self,
+        input_video: str,
+        scene: dict,
+        video_type: str = "default",
+    ) -> dict:
+        """Score a single scene based on multiple metrics.
+
+        Args:
+            input_video: Path to the source video.
+            scene: Scene dict with start, end, duration.
+            video_type: Video type for scoring profile.
+
+        Returns:
+            {
+                "score": float (0-1),
+                "metrics": {...},
+                "reason": str,
+            }
+        """
+        start = scene["start"]
+        end = scene["end"]
+
+        # Calculate metrics
+        metrics = {}
+
+        # 1. Audio energy
+        audio_energy = self.analyze_audio_energy(input_video, window_size=0.5)
+        scene_energy = [e["energy"] for e in audio_energy if e["start"] >= start and e["end"] <= end]
+        metrics["audio_energy"] = sum(scene_energy) / len(scene_energy) if scene_energy else 0.0
+
+        # 2. Visual intensity (frame diff)
+        fps, frame_diffs = self._iter_frame_diffs(input_video)
+        scene_diffs = [score for _, timestamp, score in frame_diffs if start <= timestamp <= end]
+        metrics["visual_intensity"] = sum(scene_diffs) / len(scene_diffs) if scene_diffs else 0.0
+
+        # 3. Speech density (ratio of high-energy audio)
+        metrics["speech_density"] = len([e for e in scene_energy if e > 0.3]) / len(scene_energy) if scene_energy else 0.0
+
+        # 4. Scene change (already have this from detect_scenes)
+        metrics["scene_change"] = 1.0 / max(scene["duration"], 1.0)  # Normalized
+
+        # Get scoring profile
+        profile = self.SCORING_PROFILES.get(video_type, self.SCORING_PROFILES["default"])
+
+        # Calculate weighted score
+        score = 0.0
+        for key, weight in profile.items():
+            score += metrics.get(key, 0.0) * weight
+
+        # Generate reason
+        top_metrics = sorted(
+            [(k, v) for k, v in metrics.items() if v > 0.5],
+            key=lambda x: x[1],
+            reverse=True
+        )[:2]
+        
+        if top_metrics:
+            reason = "、".join([self._metric_name(k) for k, v in top_metrics])
+            reason = f"{reason}表现突出"
+        else:
+            reason = "综合评分较高"
+
+        return {
+            "score": round(score, 2),
+            "metrics": {k: round(v, 2) for k, v in metrics.items()},
+            "reason": reason,
+        }
+
+    def _metric_name(self, key: str) -> str:
+        """Get Chinese name for metric."""
+        names = {
+            "audio_energy": "音频能量",
+            "visual_intensity": "画面变化",
+            "speech_density": "说话密度",
+            "scene_change": "场景切换",
+            "face_presence": "人脸出现",
+            "face_change": "人脸切换",
+            "emotion_score": "情感强度",
+        }
+        return names.get(key, key)
+
+    # ------------------------------------------------------------------
+    # find_safe_cut_points
+    # ------------------------------------------------------------------
+
+    def find_safe_cut_points(
+        self,
+        input_video: str,
+        start: float,
+        end: float,
+        min_silence_duration: float = 0.3,
+    ) -> list:
+        """Detect safe cut points within a time range.
+
+        Args:
+            input_video: Path to the source video.
+            start: Start time in seconds.
+            end: End time in seconds.
+            min_silence_duration: Minimum silence duration (seconds).
+
+        Returns:
+            List of cut points with safety scores.
+        """
+        cut_points = []
+
+        # 1. Scene boundaries (safest)
+        cut_points.append({
+            "time": round(start, 2),
+            "type": "scene_start",
+            "safe": True,
+            "score": 1.0,
+        })
+        cut_points.append({
+            "time": round(end, 2),
+            "type": "scene_end",
+            "safe": True,
+            "score": 1.0,
+        })
+
+        # 2. Detect silence points
+        audio_energy = self.analyze_audio_energy(input_video, window_size=0.2)
+        
+        # Find silence regions
+        silence_threshold = 0.1
+        silence_start = None
+        
+        for e in audio_energy:
+            if e["start"] < start or e["end"] > end:
+                continue
+            
+            if e["energy"] < silence_threshold:
+                if silence_start is None:
+                    silence_start = e["start"]
+            else:
+                if silence_start is not None:
+                    silence_duration = e["start"] - silence_start
+                    if silence_duration >= min_silence_duration:
+                        # Add middle point of silence
+                        cut_time = silence_start + silence_duration / 2
+                        cut_points.append({
+                            "time": round(cut_time, 2),
+                            "type": "silence",
+                            "safe": True,
+                            "score": 0.9,
+                        })
+                    silence_start = None
+
+        # Sort by time
+        cut_points.sort(key=lambda x: x["time"])
+        
+        return cut_points
+
+    # ------------------------------------------------------------------
+    # check_splice_compatibility
+    # ------------------------------------------------------------------
+
+    def check_splice_compatibility(
+        self,
+        input_video: str,
+        scene1: dict,
+        scene2: dict,
+    ) -> dict:
+        """Check if two scenes can be spliced together.
+
+        Args:
+            input_video: Path to the source video.
+            scene1: First scene dict.
+            scene2: Second scene dict.
+
+        Returns:
+            Compatibility result with issues and suggestions.
+        """
+        issues = []
+        warnings = []
+
+        # 1. Check audio energy difference
+        audio_energy = self.analyze_audio_energy(input_video, window_size=0.5)
+        
+        e1_list = [e["energy"] for e in audio_energy 
+                   if e["start"] >= scene1["start"] and e["end"] <= scene1["end"]]
+        e2_list = [e["energy"] for e in audio_energy 
+                   if e["start"] >= scene2["start"] and e["end"] <= scene2["end"]]
+        
+        avg_e1 = sum(e1_list) / len(e1_list) if e1_list else 0.0
+        avg_e2 = sum(e2_list) / len(e2_list) if e2_list else 0.0
+        
+        energy_diff = abs(avg_e1 - avg_e2) * 100  # Scale to ~dB
+        
+        if energy_diff > 15:
+            issues.append({
+                "type": "volume_jump",
+                "detail": f"音量差异约 {energy_diff:.1f}dB",
+                "severity": "error",
+                "suggestion": "建议进行音量均衡处理",
+            })
+        elif energy_diff > 10:
+            warnings.append(f"音量差异约 {energy_diff:.1f}dB，建议音量均衡")
+
+        # 2. Check visual difference (frame similarity)
+        # Sample last frame of scene1 and first frame of scene2
+        fps, frame_diffs = self._iter_frame_diffs(input_video)
+        
+        # Get visual intensity around splice point
+        splice_time = scene1["end"]
+        near_splice = [score for _, timestamp, score in frame_diffs 
+                       if abs(timestamp - splice_time) < 1.0]
+        
+        if near_splice and max(near_splice) > 0.3:
+            warnings.append("拼接点附近画面变化较大，建议添加过渡效果")
+
+        # Calculate compatibility score
+        if issues:
+            compatible = False
+            score = 0.3
+        elif warnings:
+            compatible = True
+            score = 0.7
+        else:
+            compatible = True
+            score = 0.9
+
+        return {
+            "compatible": compatible,
+            "score": round(score, 2),
+            "issues": issues,
+            "warnings": warnings,
+        }
+
+    # ------------------------------------------------------------------
+    # select_scenes
+    # ------------------------------------------------------------------
+
+    def select_scenes(
+        self,
+        input_video: str,
+        top_n: int = 5,
+        min_score: float = 0.3,
+        video_type: str = "auto",
+        with_cut_points: bool = True,
+    ) -> dict:
+        """Select and recommend best scenes from video.
+
+        Args:
+            input_video: Path to the source video.
+            top_n: Number of scenes to return.
+            min_score: Minimum score threshold.
+            video_type: Video type ("auto" for auto-detect).
+            with_cut_points: Include safe cut points.
+
+        Returns:
+            {
+                "video_type": str,
+                "total_scenes": int,
+                "recommended": [...],
+            }
+        """
+        # 1. Detect video type
+        if video_type == "auto":
+            type_result = self.detect_video_type(input_video)
+            video_type = type_result["type"]
+
+        # 2. Detect scenes
+        scenes = self.detect_scenes(input_video)
+        if not scenes:
+            return {
+                "video_type": video_type,
+                "total_scenes": 0,
+                "recommended": [],
+            }
+
+        # 3. Score each scene
+        scored_scenes = []
+        for scene in scenes:
+            score_result = self.score_scene(input_video, scene, video_type)
+            scored_scene = {
+                **scene,
+                "score": score_result["score"],
+                "metrics": score_result["metrics"],
+                "reason": score_result["reason"],
+            }
+
+            # Add cut points if requested
+            if with_cut_points and score_result["score"] >= min_score:
+                cut_points = self.find_safe_cut_points(
+                    input_video, scene["start"], scene["end"]
+                )
+                scored_scene["cut_points"] = cut_points
+
+            scored_scenes.append(scored_scene)
+
+        # 4. Filter by min_score
+        filtered = [s for s in scored_scenes if s["score"] >= min_score]
+
+        # 5. Sort by score
+        filtered.sort(key=lambda x: x["score"], reverse=True)
+
+        # 6. Return top N
+        recommended = filtered[:top_n]
+
+        return {
+            "video_type": video_type,
+            "total_scenes": len(scenes),
+            "recommended": recommended,
+        }
