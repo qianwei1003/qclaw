@@ -141,7 +141,17 @@ def format_subtitle_style(style_config: dict = None, config: dict = None) -> str
     """Format subtitle style for FFmpeg subtitles filter.
 
     Args:
-        style_config: Style configuration dict.
+        style_config: Style configuration dict with keys:
+            - font: Font name (default: "Microsoft YaHei")
+            - size: Font size in pixels (default: 24)
+            - color: Text color name or hex (default: "white")
+            - outline: Outline width (default: 1)
+            - shadow: Shadow depth (default: 1)
+            - margin_v: Vertical margin in pixels (default: 80)
+            - margin_h: Horizontal margin in pixels (default: 10)
+            - bold: Bold text (default: False)
+            - italic: Italic text (default: False)
+        config: Global config dict.
 
     Returns:
         FFmpeg subtitles filter style string (force_style parameter).
@@ -151,14 +161,18 @@ def format_subtitle_style(style_config: dict = None, config: dict = None) -> str
     if style_config is None:
         style_config = {}
 
-    # Get style values
+    # Get style values with defaults
     font = style_config.get("font") or subtitle_config.get("font", "Microsoft YaHei")
     size = style_config.get("size") or subtitle_config.get("size", 24)
     color = style_config.get("color") or subtitle_config.get("color", "white")
-    position = style_config.get("position") or subtitle_config.get("position", "bottom")
-    background = style_config.get("background") or subtitle_config.get("background", False)
+    outline = style_config.get("outline", subtitle_config.get("outline", 1))
+    shadow = style_config.get("shadow", subtitle_config.get("shadow", 1))
+    margin_v = style_config.get("margin_v", subtitle_config.get("margin_v", 80))
+    margin_h = style_config.get("margin_h", subtitle_config.get("margin_h", 10))
+    bold = style_config.get("bold", subtitle_config.get("bold", False))
+    italic = style_config.get("italic", subtitle_config.get("italic", False))
 
-    # Map color names to ASS color codes
+    # Map color names to ASS color codes (BGR format)
     color_map = {
         "white": "&HFFFFFF",
         "black": "&H000000",
@@ -166,21 +180,37 @@ def format_subtitle_style(style_config: dict = None, config: dict = None) -> str
         "red": "&H0000FF",
         "blue": "&HFF0000",
         "green": "&H00FF00",
+        "cyan": "&HFFFF00",
+        "magenta": "&HFF00FF",
     }
-    ass_color = color_map.get(color.lower(), "&HFFFFFF")
+    
+    # Handle hex colors
+    if isinstance(color, str) and color.startswith("#"):
+        # Convert #RRGGBB to &HBBGGRR
+        hex_color = color.lstrip("#")
+        if len(hex_color) == 6:
+            ass_color = f"&H{hex_color[4:6]}{hex_color[2:4]}{hex_color[0:2]}"
+        else:
+            ass_color = "&HFFFFFF"
+    else:
+        ass_color = color_map.get(color.lower(), "&HFFFFFF")
 
     # Build force_style string for subtitles filter
-    style_parts = [f"FontName={font}", f"FontSize={size}", f"PrimaryColour={ass_color}"]
+    style_parts = [
+        f"FontName={font}",
+        f"FontSize={size}",
+        f"PrimaryColour={ass_color}",
+        f"Outline={outline}",
+        f"Shadow={shadow}",
+        f"MarginV={margin_v}",
+        f"MarginL={margin_h}",
+        f"MarginR={margin_h}",
+    ]
+    
+    # Add bold/italic
+    if bold:
+        style_parts.append("Bold=1")
+    if italic:
+        style_parts.append("Italic=1")
 
-    if position == "bottom":
-        style_parts.append("MarginV=30")
-    elif position == "top":
-        style_parts.append("MarginV=30")
-    elif position == "center":
-        pass  # Default center
-
-    if background:
-        style_parts.append("BackColour=&H80000000")
-        style_parts.append("BorderStyle=4")
-
-    return "force_style='" + ",".join(style_parts) + "'"
+    return ",".join(style_parts)

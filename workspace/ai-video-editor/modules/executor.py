@@ -779,12 +779,27 @@ class Executor:
         style_str = analyzer.format_subtitle_style(style_config)
 
         # Build FFmpeg command with subtitles filter
-        # Use subtitles filter with force_style for customization
+        # Note: video must be re-encoded when using subtitles filter
+        # Use libx264 for video and aac for audio (re-encode both streams)
+        
+        # Convert Windows path to FFmpeg-compatible format
+        # FFmpeg on Windows needs forward slashes or escaped colons
+        srt_path_ffmpeg = srt_file.replace('\\', '/')
+        
+        # Build the subtitles filter with proper escaping
+        # For Windows paths with colons (C:/path), FFmpeg needs special handling
+        subtitles_filter = f"subtitles={srt_path_ffmpeg}:force_style='{style_str}'"
+        
         cmd = [
             self.ffmpeg_path, "-y",
             "-i", input_video,
-            "-vf", f"subtitles={srt_file.replace(':', '\\:')}:{style_str}",
-            "-c:a", "copy",  # Copy audio without re-encoding
+            "-vf", subtitles_filter,
+            "-c:v", "libx264",  # Re-encode video with subtitles
+            "-preset", "fast",  # Fast encoding preset
+            "-crf", "22",  # Quality setting
+            "-c:a", "aac",  # Re-encode audio to AAC
+            "-b:a", "192k",  # Audio bitrate
+            "-ar", "44100",  # Audio sample rate
             output_video,
         ]
 

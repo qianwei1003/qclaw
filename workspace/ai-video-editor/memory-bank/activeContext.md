@@ -1,29 +1,27 @@
 # 当前上下文
 
 ## 当前焦点
-V1 和 V2 Step 1-5 已完成（analyze_content：场景+音频联合分析）。
-下一步：V2 Step 6——AI 辅助场景选择。
+V4 设计：Pipeline 执行引擎重构
+
+核心问题：Executor 从"命令路由器"变成"Pipeline 执行引擎"
 
 ## 最近变更
-- 新增 `Analyzer.analyze_content_density()` — 场景+音频联合分析，为每个场景计算 content_score（audio_weight * audio_score + visual_weight * visual_score），标记 has_content
-- 新增 `edit_video.py analyze_content` 操作
-- `extract_audio` 对无音频视频优雅降级（不抛异常）
-- `analyze_audio_energy` 无音频时生成零能量窗口
-- 新增 `modules/analyzer.py` — 5 个方法：`extract_audio`、`detect_scenes`、`extract_thumbnail`、`analyze_audio_energy`、`detect_static_segments`
-- `executor.py` 中的 `_remove_static` 从空壳替换为真实实现，调用 `Analyzer.detect_static_segments()`
-- 新增 `edit_video.py` — AI 调用的结构化 CLI 入口，完全绕过 Parser
-- 整合 `memory-bank/`：合并旧 `docs/` 到 `api-reference.md`、`design-decisions.md`、`error-handling.md`、`test-strategy.md`
+- 2026-03-28：发现 memory-bank 是项目专用文档系统，不应删除
+- 2026-03-28：更新 V4 架构设计（Pipeline + Planner）
 
 ## 下一步
-1. V2 Step 6：AI 辅助场景选择（根据用户意图推荐场景）
-2. V3：自动字幕（Whisper 语音识别 + SRT 生成）
+1. V4 Step 1：设计 Pipeline 架构
+2. V4 Step 2：实现 PipelineExecutor 类
 
 ## 待定决策
-- Parser（`modules/parser.py`）保留但已废弃，后续可清理
-- `docs/` 已删除，内容合并到 `memory-bank/` 各文件
+- Pipeline 决策层：规则引擎 vs LLM？
 
 ## 当前阻塞
 无。
+
+## 重要教训
+⚠️ memory-bank 是项目专用文档系统，不能随便删除！
+详见 workspace/SELF_IMPROVEMENT.md
 
 ## memory-bank 文档索引
 
@@ -31,7 +29,7 @@ V1 和 V2 Step 1-5 已完成（analyze_content：场景+音频联合分析）。
 |------|------|
 | `projectbrief.md` | 项目目标、范围、成功标准 |
 | `productContext.md` | 用户问题、目标用户、设计目标 |
-| `techContext.md` | 技术栈、开发环境、约束 |
+| `techContext.md` | 技术栈，开发环境、约束 |
 | `progress.md` | V1-V4 路线图、里程碑 |
 | `systemPatterns.md` | 架构图、模块职责、数据流 |
 | `activeContext.md` | 当前焦点、最近变更、下一步 |
@@ -39,4 +37,4 @@ V1 和 V2 Step 1-5 已完成（analyze_content：场景+音频联合分析）。
 | `api-reference.md` | 完整操作参数表、返回值结构 |
 | `design-decisions.md` | 架构设计、核心决策 |
 | `error-handling.md` | 错误处理规范 |
-| `test-strategy.md` | 测试策略、操作矩阵 |
+| `test-strategy.md` | 测试策略 |

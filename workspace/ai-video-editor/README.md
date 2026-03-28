@@ -1,110 +1,109 @@
 # AI 视频剪辑器
 
-通过自然语言指令自动完成视频剪辑，组合现有开源工具，用 AI 做决策。
+通过 AI 自动化视频剪辑，无需手动操作即可完成基础剪辑工作。
+
+---
+
+## 项目目标
+
+一个 AI 驱动的视频剪辑工具，用户通过自然语言描述剪辑需求，AI 理解意图并调用结构化工具执行，无需手动操作。
+
+---
 
 ## 功能特点
 
-- 🎬 **自然语言控制** — 说话就能剪辑，不用记命令
-- ✂️ **智能多段剪辑** — 支持只保留多个时间段，自动合并
-- 🔇 **自动删除静音** — 去掉视频里的空白静音段
-- 🎥 **场景自动分割** — 检测镜头切换，自动分割场景（规划中）
-- 📝 **自动生成字幕** — 语音识别生成字幕（规划中）
-- ✨ **智能精彩片段** — AI 识别精彩片段（规划中）
+| 阶段 | 功能 | 状态 |
+|------|------|------|
+| **V1** | 基础自动剪辑 | ✅ 完成 |
+| | - 删除静音段 | ✅ |
+| | - 删除静止帧段 | ✅ |
+| | - 裁剪、合并、转换 | ✅ |
+| **V2** | 场景分割 | ✅ 完成 |
+| | - 场景检测 | ✅ |
+| | - AI 辅助场景选择 | ✅ |
+| | - 内容密度分析 | ✅ |
+| **V3** | 自动字幕 | ✅ 完成 |
+| | - Whisper 语音识别 | ✅ |
+| | - SRT 生成 | ✅ |
+| | - 字幕烧录 | ✅ |
+| **V4** | 智能剪辑 | ⏳ 待开发 |
+| | - AI 决策层 | ⏳ 待开发 |
+| | - Pipeline 执行引擎 | ⏳ 待开发 |
+
+---
 
 ## 快速开始
 
 ### 安装依赖
 
 ```bash
-# 安装 FFmpeg（必须）
-# Windows: https://ffmpeg.org/download.html
-# Mac: brew install ffmpeg
-# Linux: sudo apt install ffmpeg
-
-# 安装 auto-editor（可选，用于静音检测）
-pip install auto-editor
+pip install -r requirements.txt
 ```
 
 ### 基础用法
 
 ```bash
-# 自然语言指令剪辑
-python main.py "删除前 10 秒" input.mp4 output.mp4
-python main.py "只保留 0分到30分" input.mp4 output.mp4
-python main.py "只保留0到10和30到50" input.mp4 output.mp4   # 多段截取
-python main.py "删除静音段" input.mp4 output.mp4
+# 自动删除静音
+python edit_video.py --operation remove_silence --input video.mp4 --output output.mp4
 
-# 合并多个视频
-python main.py "合并 video1.mp4 和 video2.mp4" video1.mp4 output.mp4
+# 场景检测
+python edit_video.py --operation detect_scenes --input video.mp4
 
-# 转换分辨率
-python main.py "转换为 1080p" input.mp4 output.mp4
+# 生成字幕
+python edit_video.py --operation auto_subtitle --input video.mp4 --output output.mp4
 ```
 
-### Python API
-
-```python
-from ai_video_editor import VideoEditor
-
-editor = VideoEditor()
-
-result = editor.edit(
-    instruction="删除静音段",
-    input_video="input.mp4",
-    output_video="output.mp4"
-)
-
-if result["success"]:
-    print(f"完成! 耗时 {result['execution_time']:.2f} 秒")
-else:
-    for err in result["errors"]:
-        print(f"错误: {err}")
-```
-
-## 支持的指令
-
-| 指令 | 示例 |
-|------|------|
-| 删除开头 | "删除前 10 秒" |
-| 删除结尾 | "删除最后 5 秒" |
-| 单段截取 | "只保留 1:00 到 3:00" |
-| 多段截取 | "只保留 0到10和30到50" |
-| 合并视频 | "合并 video1.mp4 和 video2.mp4" |
-| 转换分辨率 | "转换为 1080p" / "转换为 4k" |
-| 删除静音 | "删除静音段" |
+---
 
 ## 项目结构
 
 ```
 ai-video-editor/
-├── main.py                 # 主入口（VideoEditor 类 + CLI）
-├── modules/
-│   ├── parser.py          # 需求解析（自然语言 → 结构化指令）
-│   ├── executor.py        # 执行器（调用 FFmpeg）
-│   └── validator.py       # 验证器（检查输出）
-├── tests/                  # 测试视频和脚本
-└── docs/                   # 详细文档
+├── edit_video.py          # AI 调用入口（结构化 CLI）
+├── main.py                # VideoEditor 主类
+├── config.yaml            # 配置文件
+├── modules/               # 核心模块
+│   ├── analyzer.py        # 视频分析入口
+│   ├── audio.py           # 音频处理
+│   ├── scene.py           # 场景检测
+│   ├── content.py         # 内容分析
+│   ├── subtitle.py        # 字幕生成
+│   ├── executor.py        # 执行引擎
+│   └── validator.py       # 输出验证
+├── tests/                 # 测试文件
+└── docs/                  # 设计文档
 ```
-
-## 文档
-
-- [PROJECT_PLAN.md](PROJECT_PLAN.md) — 开发计划与进度
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 技术架构
-- [docs/API_DESIGN.md](docs/API_DESIGN.md) — API 设计
-- [docs/WORKFLOW.md](docs/WORKFLOW.md) — 处理流程
-- [docs/TEST_PLAN.md](docs/TEST_PLAN.md) — 测试方案
-- [docs/ERROR_HANDLING.md](docs/ERROR_HANDLING.md) — 错误处理
-
-## 当前进度
-
-| 阶段 | 功能 | 状态 |
-|------|------|------|
-| 通用基础设施 | Parser / Executor / Validator | ✅ 已完成 |
-| V1 基础剪辑 | 删除静音 / 多段截取 / 合并 / 转换 | ✅ 已完成 |
-| V2 场景分割 | 镜头切换检测 | ⏳ 规划中 |
-| V3 自动字幕 | Whisper 语音识别 | ⏳ 规划中 |
-| V4 智能剪辑 | 精彩片段检测 | ⏳ 规划中 |
 
 ---
 
-_Last updated: 2026-03-24_
+## 架构概览
+
+```
+用户 / AI
+    ↓
+edit_video.py              # 结构化 CLI 入口
+    ↓
+Executor                   # 执行引擎
+    ↓
+Analyzer                   # 分析层（共用）
+    ├── audio.py           # 音频分析
+    ├── scene.py           # 场景检测
+    ├── content.py         # 内容分析
+    └── subtitle.py        # 字幕生成
+    ↓
+FFmpeg                    # 实际视频处理
+```
+
+---
+
+## 下一步：V4 智能剪辑
+
+V4 需要新增：
+1. **决策层（Planner）** - 从分析结果生成剪辑决策
+2. **Pipeline 执行引擎** - 链式执行、回滚、Dry-run
+
+详见 [ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
+---
+
+_Last updated: 2026-03-28_

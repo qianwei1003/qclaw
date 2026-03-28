@@ -257,3 +257,51 @@ class Analyzer:
     def format_subtitle_style(self, style_config: dict = None) -> str:
         """Format subtitle style."""
         return format_subtitle_style(style_config, self.config)
+    
+    # ------------------------------------------------------------------
+    # Audio separation methods
+    # ------------------------------------------------------------------
+    
+    def separate_vocals(
+        self,
+        input_video: str,
+        output_audio: str,
+    ) -> str:
+        """Extract vocals from video using FFmpeg audio filters.
+        
+        Uses FFmpeg's highpass filter to isolate vocals (removes low-frequency music).
+        
+        Args:
+            input_video: Path to source video.
+            output_audio: Path to output audio file (WAV or MP3).
+        
+        Returns:
+            Path to extracted vocals audio file.
+        
+        Raises:
+            AnalyzerError: If extraction fails.
+        """
+        from .utils import require_file
+        import subprocess
+        
+        require_file(input_video)
+        
+        # Use FFmpeg highpass filter to isolate vocals
+        # Removes frequencies below 200Hz (where music bass typically is)
+        cmd = [
+            self.ffmpeg_path, "-y",
+            "-i", input_video,
+            "-af", "highpass=f=200:poles=2",  # Highpass filter at 200Hz
+            "-q:a", "9",  # Quality setting for MP3
+            output_audio,
+        ]
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if result.returncode != 0:
+                raise AnalyzerError(f"FFmpeg vocal extraction failed: {result.stderr}")
+            return output_audio
+        except subprocess.TimeoutExpired:
+            raise AnalyzerError("Vocal extraction timeout")
+        except Exception as e:
+            raise AnalyzerError(f"Vocal extraction error: {e}")
