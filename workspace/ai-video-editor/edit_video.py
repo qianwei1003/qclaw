@@ -246,6 +246,7 @@ def main() -> int:
 
     # info operation — no output needed
     if args.operation == "info":
+        from modules.executor import Executor
         executor = Executor()
         info = get_video_info(executor, input_video)
         print_result(True, "Video info retrieved", info)

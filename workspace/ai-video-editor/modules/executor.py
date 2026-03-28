@@ -141,7 +141,9 @@ class Executor:
             if result.returncode == 0:
                 return True, "成功"
             else:
-                error_msg = result.stderr.split("\n")[-3] if result.stderr else "未知错误"
+                # Extract last non-empty line as error message
+                lines = [l.strip() for l in result.stderr.split("\n") if l.strip()]
+                error_msg = lines[-1] if lines else "Unknown error"
                 return False, error_msg
                 
         except Exception as e:
@@ -157,9 +159,14 @@ class Executor:
         Returns:
             时长（秒），失败返回 None
         """
+        # Use ffprobe for reliable duration extraction
+        ffprobe_path = self.ffmpeg_path.replace("ffmpeg", "ffprobe")
         cmd = [
-            self.ffmpeg_path,
-            "-i", video_path
+            ffprobe_path,
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            video_path,
         ]
         
         try:
@@ -172,19 +179,8 @@ class Executor:
                 timeout=30
             )
             
-            # 从输出中提取时长
-            # 格式: Duration: 00:01:30.50
-            match = re.search(
-                r'Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})',
-                result.stderr
-            )
-            
-            if match:
-                hours = int(match.group(1))
-                minutes = int(match.group(2))
-                seconds = int(match.group(3))
-                centiseconds = int(match.group(4))
-                return hours * 3600 + minutes * 60 + seconds + centiseconds / 100
+            if result.returncode == 0 and result.stdout.strip():
+                return float(result.stdout.strip())
             
             return None
             
@@ -280,7 +276,7 @@ class Executor:
     
     def _trim_range(
         self, 
-        params: Dict[str, Any], 
+        params: dict[str, Any], 
         input_video: str, 
         output_video: str
     ) -> bool:
@@ -324,7 +320,7 @@ class Executor:
     
     def _trim_segments(
         self, 
-        segments: List[Tuple[float, float]], 
+        segments: list[tuple[float, float]], 
         input_video: str, 
         output_video: str
     ) -> bool:
@@ -498,7 +494,7 @@ class Executor:
     
     def _convert(
         self, 
-        params: Dict[str, Any], 
+        params: dict[str, Any], 
         input_video: str, 
         output_video: str
     ) -> bool:
@@ -528,7 +524,7 @@ class Executor:
     
     def _remove_silence(
         self, 
-        params: Dict[str, Any], 
+        params: dict[str, Any], 
         input_video: str, 
         output_video: str
     ) -> bool:
@@ -619,7 +615,7 @@ class Executor:
     
     def _remove_static(
         self,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         input_video: str,
         output_video: str,
     ) -> bool:
@@ -683,7 +679,7 @@ class Executor:
 
     def _split_by_scenes(
         self,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         input_video: str,
         output_video: str,
     ) -> bool:
@@ -751,7 +747,7 @@ class Executor:
 
     def burn_subtitle(
         self,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         input_video: str,
         output_video: str,
     ) -> bool:
