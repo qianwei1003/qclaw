@@ -147,9 +147,20 @@ OPERATIONS: dict[str, dict] = {
         "example_params": {"srt_file": "video.srt"},
     },
     "auto_subtitle": {
-        "description": "One-click auto subtitle: transcribe + generate SRT + burn into video.",
+        "description": "One-click auto subtitle: extract vocals + transcribe + generate SRT + burn into video.",
         "required_params": [],
-        "example_params": {"language": "zh", "model": "base"},
+        "example_params": {
+            "language": "zh",
+            "model": "medium",
+            "extract_vocals": True,
+            "initial_prompt": "这是一段关于...的对话",
+            "temperature": 0.0,
+        },
+    },
+    "separate_vocals": {
+        "description": "Extract vocals from video (removes background music).",
+        "required_params": [],
+        "example_params": {"output_audio": "vocals.mp3"},
     },
 }
 
@@ -251,6 +262,29 @@ def main() -> int:
         info = get_video_info(executor, input_video)
         print_result(True, "Video info retrieved", info)
         return 0
+
+    # separate_vocals operation — no --output needed, uses params
+    if args.operation == "separate_vocals":
+        from modules.analyzer import Analyzer, AnalyzerError
+        analyzer = Analyzer()
+        
+        # Get output audio path from params or generate default
+        output_audio = params.get("output_audio")
+        if not output_audio:
+            base_name = os.path.splitext(input_video)[0]
+            output_audio = base_name + "_vocals.mp3"
+        
+        try:
+            result_path = analyzer.separate_vocals(input_video, output_audio)
+            print_result(
+                True,
+                f"Vocals extracted: {os.path.basename(result_path)}",
+                {"output_audio": result_path},
+            )
+            return 0
+        except AnalyzerError as e:
+            print_result(False, f"Vocal extraction failed: {e}")
+            return 1
 
     # detect_scenes operation — no output needed, returns scene list
     if args.operation == "detect_scenes":
@@ -521,20 +555,37 @@ def main() -> int:
         from modules.executor import Executor, ExecutionError
         
         try:
-            # Step 1: Transcribe
             analyzer = Analyzer()
+            
+            # Step 1: Extract vocals (optional, improves accuracy for videos with background music)
+            use_vocal_extraction = params.get("extract_vocals", True)  # Default enabled
+            audio_input = input_video
+            
+            if use_vocal_extraction:
+                base_name = os.path.splitext(input_video)[0]
+                vocals_path = base_name + "_vocals.mp3"
+                try:
+                    analyzer.separate_vocals(input_video, vocals_path)
+                    audio_input = vocals_path  # Use extracted vocals for transcription
+                except AnalyzerError:
+                    # If vocal extraction fails, use original audio
+                    pass
+            
+            # Step 2: Transcribe
             segments = analyzer.transcribe(
-                input_video,
+                audio_input,
                 language=params.get("language"),
                 model=params.get("model"),
+                initial_prompt=params.get("initial_prompt"),
+                temperature=params.get("temperature"),
             )
             
-            # Step 2: Generate SRT
+            # Step 3: Generate SRT
             base_name = os.path.splitext(input_video)[0]
             srt_file = base_name + ".srt"
             srt_path = analyzer.generate_srt(segments, srt_file)
             
-            # Step 3: Burn subtitle
+            # Step 4: Burn subtitle
             executor = Executor()
             success = executor.burn_subtitle(
                 {"srt_file": srt_path, "style": params.get("style", {})},
@@ -550,6 +601,7 @@ def main() -> int:
                         "srt_file": srt_path,
                         "output_video": output_video,
                         "segment_count": len(segments),
+                        "vocals_extracted": use_vocal_extraction and audio_input != input_video,
                     },
                 )
             return 0 if success else 1

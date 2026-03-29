@@ -236,10 +236,15 @@ class Analyzer:
         input_video: str,
         language: str = None,
         model: str = None,
+        initial_prompt: str = None,
+        temperature: float = None,
     ) -> list[dict]:
         """Transcribe audio to text."""
         try:
-            return transcribe(input_video, language, model, self.config)
+            return transcribe(
+                input_video, language, model, self.config,
+                initial_prompt=initial_prompt, temperature=temperature
+            )
         except SubtitleError as e:
             raise AnalyzerError(str(e)) from e
     

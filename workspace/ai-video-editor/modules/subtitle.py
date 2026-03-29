@@ -42,6 +42,8 @@ def transcribe(
     language: str = None,
     model: str = None,
     config: dict = None,
+    initial_prompt: str = None,
+    temperature: float = None,
 ) -> list[dict]:
     """Transcribe audio to text with timestamps using Whisper.
 
@@ -49,6 +51,8 @@ def transcribe(
         input_video: Path to the source video.
         language: Language code (e.g., 'zh', 'en'). Auto-detect if None.
         model: Whisper model size (tiny/base/small/medium/large).
+        initial_prompt: Context prompt to help recognition (e.g., video topic).
+        temperature: Sampling temperature (0-1). Lower = more deterministic.
 
     Returns:
         List of segments with start, end, text.
@@ -58,24 +62,64 @@ def transcribe(
     # Get config values
     subtitle_config = (config or {}).get("subtitle", {})
     language = language or subtitle_config.get("language", "zh")
-    model = model or subtitle_config.get("model", "base")
+    model = model or subtitle_config.get("model", "medium")  # Default to medium for better accuracy
+    initial_prompt = initial_prompt or subtitle_config.get("initial_prompt", "")
+    temperature = temperature if temperature is not None else subtitle_config.get("temperature", 0.0)
 
     # Load model (cached)
     model_obj = _get_whisper_model(model)
 
-    # Transcribe
-    result = model_obj.transcribe(input_video, language=language)
+    # Transcribe with optimized parameters
+    transcribe_params = {
+        "language": language,
+        "task": "transcribe",  # Only transcribe, not translate
+        "temperature": temperature,  # 0.0 = most deterministic
+        "word_timestamps": True,  # Word-level timestamps for better alignment
+    }
+    
+    # Add initial_prompt if provided (helps with proper nouns, context)
+    if initial_prompt:
+        transcribe_params["initial_prompt"] = initial_prompt
+    
+    result = model_obj.transcribe(input_video, **transcribe_params)
 
     # Format output
     segments = []
     for seg in result["segments"]:
+        text = seg["text"].strip()
+        
+        # Post-processing: fix common recognition errors
+        text = _fix_common_errors(text, language)
+        
         segments.append({
             "start": round(seg["start"], 3),
             "end": round(seg["end"], 3),
-            "text": seg["text"].strip(),
+            "text": text,
         })
 
     return segments
+
+
+def _fix_common_errors(text: str, language: str) -> str:
+    """Fix common Whisper recognition errors.
+    
+    Args:
+        text: Recognized text.
+        language: Language code.
+    
+    Returns:
+        Corrected text.
+    """
+    if language == "zh":
+        # Common Chinese recognition errors
+        fixes = {
+            "？": "吗",  # Question mark confusion
+            "！": "啊",  # Exclamation confusion
+        }
+        for wrong, correct in fixes.items():
+            text = text.replace(wrong, correct)
+    
+    return text
 
 
 def generate_srt(

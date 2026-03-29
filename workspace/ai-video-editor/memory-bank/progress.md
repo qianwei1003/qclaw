@@ -3,7 +3,7 @@
 ## 当前状态
 **V1、V2、V3 已完成。V4 待开始。**
 
-最新更新: 2026-03-27
+最新更新: 2026-03-29
 
 ---
 
@@ -37,6 +37,13 @@
 - `generate_srt()` — 生成SRT字幕文件
 - `burn_subtitle()` — FFmpeg字幕烧录
 - `auto_subtitle` — 一键字幕
+- `separate_vocals()` — 提取人声（去除背景音乐）
+
+### V3 修复记录 (2026-03-29)
+- 修复 `burn_subtitle` 的 Windows 路径问题（转义冒号）
+- 修复字幕烧录时的音频编码问题（改用 `-c:a aac`）
+- 添加 `separate_vocals` 操作
+- 优化字幕样式配置（支持 outline、shadow、margin 等）
 
 ---
 

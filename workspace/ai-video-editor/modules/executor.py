@@ -783,12 +783,15 @@ class Executor:
         # Use libx264 for video and aac for audio (re-encode both streams)
         
         # Convert Windows path to FFmpeg-compatible format
-        # FFmpeg on Windows needs forward slashes or escaped colons
+        # FFmpeg on Windows needs forward slashes and escaped colons in drive letters
+        # e.g., C:\path\file.srt -> C\\:/path/file.srt
         srt_path_ffmpeg = srt_file.replace('\\', '/')
+        # Escape the colon in Windows drive letter (C: -> C\\:)
+        if len(srt_path_ffmpeg) > 1 and srt_path_ffmpeg[1] == ':':
+            srt_path_ffmpeg = srt_path_ffmpeg[0] + '\\\\:' + srt_path_ffmpeg[2:]
         
-        # Build the subtitles filter with proper escaping
-        # For Windows paths with colons (C:/path), FFmpeg needs special handling
-        subtitles_filter = f"subtitles={srt_path_ffmpeg}:force_style='{style_str}'"
+        # Build the subtitles filter
+        subtitles_filter = f"subtitles='{srt_path_ffmpeg}':force_style='{style_str}'"
         
         cmd = [
             self.ffmpeg_path, "-y",

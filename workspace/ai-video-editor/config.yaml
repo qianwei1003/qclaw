@@ -162,12 +162,20 @@ audio_analysis:
 subtitle:
   # 语音识别
   language: "zh"                # 语言代码：zh=中文，en=英文
-  model: "base"                 # Whisper模型：tiny/base/small/medium/large
+  model: "medium"               # Whisper模型：tiny/base/small/medium/large（medium 平衡准确率和速度）
+  
+  # 识别优化
+  temperature: 0.0              # 采样温度（0-1），越低越确定
+  initial_prompt: ""            # 初始提示，帮助识别专有名词
   
   # 字幕样式
   font: "微软雅黑"               # 字体名称
   size: 24                      # 字体大小
   color: "white"                # 字体颜色：white/yellow/red/blue/green
+  outline: 1                    # 描边宽度
+  shadow: 1                     # 阴影深度
+  margin_v: 80                  # 垂直边距（像素）
+  margin_h: 10                  # 水平边距（像素）
   position: "bottom"            # 位置：bottom/top/center
   background: false             # 是否添加背景色块
   
