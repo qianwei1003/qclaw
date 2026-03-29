@@ -24,26 +24,55 @@ except ImportError:
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def run_operation(operation: str, input_video, output_path: str, params: dict) -> tuple[str, str]:
+def get_local_videos():
+    """Get list of video files in videos directory."""
+    videos_dir = os.path.join(PROJECT_DIR, "videos")
+    if not os.path.exists(videos_dir):
+        os.makedirs(videos_dir, exist_ok=True)
+    
+    video_extensions = ['.mp4', '.mkv', '.avi', '.mov', '.webm']
+    videos = []
+    for f in os.listdir(videos_dir):
+        if any(f.lower().endswith(ext) for ext in video_extensions):
+            videos.append(f)
+    return sorted(videos)
+
+
+def run_operation(operation: str, input_video: str, output_path: str, params: dict) -> tuple[str, str, str]:
     """Run edit_video.py operation.
     
     Args:
         operation: Operation name.
-        input_video: Input video path.
+        input_video: Input video path (filename or full path).
         output_path: Output path.
         params: Operation parameters.
     
     Returns:
-        (output_info, command)
+        (output_info, command, output_file)
     """
-    if input_video is None:
-        return "请先上传视频", ""
+    if not input_video:
+        return "请先选择或输入视频路径", "", ""
+    
+    # Videos and output directories
+    videos_dir = os.path.join(PROJECT_DIR, "videos")
+    output_dir = os.path.join(PROJECT_DIR, "output")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # If input is just a filename, prepend videos directory
+    if not os.path.isabs(input_video):
+        input_video_path = os.path.join(videos_dir, input_video)
+    else:
+        input_video_path = input_video
+    
+    # Check if file exists
+    if not os.path.exists(input_video_path):
+        return f"视频文件不存在: {input_video_path}", "", ""
     
     # Build command
     cmd = [
         "python", os.path.join(PROJECT_DIR, "edit_video.py"),
         "--operation", operation,
-        "--input", input_video,
+        "--input", input_video_path,
     ]
     
     if output_path:
@@ -61,14 +90,22 @@ def run_operation(operation: str, input_video, output_path: str, params: dict) -
             encoding='utf-8',
             errors='replace',
             cwd=PROJECT_DIR,
+            timeout=600,  # 10 minutes timeout
         )
         
+        # Combine stdout and stderr for complete output
+        full_output = result.stdout
+        if result.stderr:
+            full_output += f"\n[STDERR]\n{result.stderr}"
+        
         if result.returncode == 0:
-            return result.stdout, " ".join(cmd)
+            return full_output, " ".join(cmd), output_path if output_path else ""
         else:
-            return f"错误: {result.stderr}", " ".join(cmd)
+            return f"错误 (code={result.returncode}):\n{full_output}", " ".join(cmd), ""
+    except subprocess.TimeoutExpired:
+        return "执行超时（超过10分钟）", " ".join(cmd), ""
     except Exception as e:
-        return f"执行失败: {e}", ""
+        return f"执行失败: {e}", " ".join(cmd), ""
 
 
 def on_auto_subtitle(
@@ -78,7 +115,7 @@ def on_auto_subtitle(
     extract_vocals: bool,
     initial_prompt: str,
     temperature: float,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     """Handle auto_subtitle operation."""
     params = {
         "language": language,
@@ -89,7 +126,9 @@ def on_auto_subtitle(
     if initial_prompt:
         params["initial_prompt"] = initial_prompt
     
-    output_path = os.path.join(PROJECT_DIR, "output_subtitled.mp4")
+    output_dir = os.path.join(PROJECT_DIR, "output")
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, "output_subtitled.mp4")
     return run_operation("auto_subtitle", input_video, output_path, params)
 
 
@@ -97,7 +136,7 @@ def on_transcribe(
     input_video,
     language: str,
     model: str,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     """Handle transcribe operation."""
     params = {
         "language": language,
@@ -106,12 +145,12 @@ def on_transcribe(
     return run_operation("transcribe", input_video, None, params)
 
 
-def on_separate_vocals(input_video) -> tuple[str, str]:
+def on_separate_vocals(input_video) -> tuple[str, str, str]:
     """Handle separate_vocals operation."""
     return run_operation("separate_vocals", input_video, None, {})
 
 
-def on_info(input_video) -> tuple[str, str]:
+def on_info(input_video) -> tuple[str, str, str]:
     """Handle info operation."""
     return run_operation("info", input_video, None, {})
 
@@ -123,8 +162,19 @@ with gr.Blocks(title="AI Video Editor") as app:
     
     with gr.Row():
         with gr.Column(scale=1):
-            # Input
-            input_video = gr.File(label="上传视频", file_types=[".mp4", ".mkv", ".avi", ".mov"])
+            # Input - select local video
+            input_video = gr.Dropdown(
+                choices=get_local_videos(),
+                label="选择视频",
+                info="从 videos 文件夹选择",
+                allow_custom_value=True,
+            )
+            refresh_btn = gr.Button("🔄 刷新视频列表", size="sm")
+            gr.Markdown(f"""
+- **原始视频**: `{PROJECT_DIR}\\videos\\`
+- **输出文件**: `{PROJECT_DIR}\\output\\`
+- 也可以直接输入完整路径
+            """)
             
             # Common parameters
             with gr.Accordion("通用参数", open=True):
@@ -162,6 +212,7 @@ with gr.Blocks(title="AI Video Editor") as app:
             # Output
             output = gr.Textbox(label="输出结果", lines=10)
             command = gr.Textbox(label="执行命令", lines=2)
+            output_file = gr.Textbox(label="输出文件路径", lines=1, interactive=False)
     
     # Buttons
     with gr.Row():
@@ -174,39 +225,52 @@ with gr.Blocks(title="AI Video Editor") as app:
     btn_info.click(
         fn=on_info,
         inputs=[input_video],
-        outputs=[output, command],
+        outputs=[output, command, output_file],
     )
     
     btn_separate.click(
         fn=on_separate_vocals,
         inputs=[input_video],
-        outputs=[output, command],
+        outputs=[output, command, output_file],
     )
     
     btn_transcribe.click(
         fn=on_transcribe,
         inputs=[input_video, language, model],
-        outputs=[output, command],
+        outputs=[output, command, output_file],
     )
     
     btn_auto_subtitle.click(
         fn=on_auto_subtitle,
         inputs=[input_video, language, model, extract_vocals, initial_prompt, temperature],
-        outputs=[output, command],
+        outputs=[output, command, output_file],
+    )
+    
+    # Refresh button event
+    refresh_btn.click(
+        fn=lambda: gr.Dropdown(choices=get_local_videos()),
+        outputs=[input_video],
     )
     
     # Examples
     gr.Markdown("## 使用说明")
     gr.Markdown("""
-    1. 上传视频文件（支持 mp4, mkv, avi, mov）
-    2. 选择语言和模型
-    3. 点击功能按钮执行
+    1. 把视频放到 `videos` 文件夹
+    2. 点击刷新按钮
+    3. 下拉框选择视频
+    4. 点击功能按钮执行
     
     **功能说明：**
     - **获取视频信息**：查看视频时长、分辨率等信息
     - **提取人声**：去除背景音乐，提取人声
     - **语音识别**：使用 Whisper 识别语音
     - **一键字幕**：自动完成人声提取 + 语音识别 + 字幕烧录
+    
+    **输出文件位置：**
+    - 所有输出文件都在 `output` 文件夹
+    - 一键字幕: `output/output_subtitled.mp4`
+    - 人声提取: `output/{视频名}_vocals.mp3`
+    - SRT字幕: `output/{视频名}.srt`
     """)
 
 
