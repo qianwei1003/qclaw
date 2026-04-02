@@ -16,8 +16,8 @@ qmemory/
 media/
 
 # Session history (sensitive)
-agents/main/sessions
-agents/main/agent/models.json
+agents/*/sessions
+agents/*/agent/models.json
 *.jsonl
 *.lock
 
